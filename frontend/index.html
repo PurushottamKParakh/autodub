@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Autodub - AI Video Dubbing</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎬 Autodub</h1>
+            <p class="subtitle">AI-Powered Video Dubbing Platform</p>
+        </header>
+
+        <main>
+            <div class="card">
+                <h2>Create New Dub</h2>
+                <form id="dubForm">
+                    <div class="form-group">
+                        <label for="youtubeUrl">YouTube URL</label>
+                        <input 
+                            type="url" 
+                            id="youtubeUrl" 
+                            name="youtubeUrl" 
+                            placeholder="https://www.youtube.com/watch?v=..." 
+                            required
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label for="targetLanguage">Target Language</label>
+                        <select id="targetLanguage" name="targetLanguage" required>
+                            <option value="es">Spanish (Español)</option>
+                            <option value="fr">French (Français)</option>
+                            <option value="de">German (Deutsch)</option>
+                            <option value="it">Italian (Italiano)</option>
+                            <option value="pt">Portuguese (Português)</option>
+                            <option value="ja">Japanese (日本語)</option>
+                            <option value="ko">Korean (한국어)</option>
+                            <option value="zh">Chinese (中文)</option>
+                            <option value="hi">Hindi (हिन्दी)</option>
+                            <option value="ar">Arabic (العربية)</option>
+                            <option value="ru">Russian (Русский)</option>
+                        </select>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary" id="submitBtn">
+                        Start Dubbing
+                    </button>
+                </form>
+            </div>
+
+            <div id="progressSection" class="card hidden">
+                <h2>Processing Status</h2>
+                <div class="progress-info">
+                    <p><strong>Job ID:</strong> <span id="jobId">-</span></p>
+                    <p><strong>Status:</strong> <span id="status">-</span></p>
+                    <p><strong>Progress:</strong> <span id="progress">0</span>%</p>
+                    <p id="message">-</p>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+            </div>
+
+            <div id="resultSection" class="card hidden">
+                <h2>✅ Dubbing Complete!</h2>
+                <div class="video-container">
+                    <video id="resultVideo" controls>
+                        Your browser does not support the video tag.
+                    </video>
+                </div>
+                <div class="button-group">
+                    <button class="btn btn-success" id="downloadBtn">
+                        Download Video
+                    </button>
+                    <button class="btn btn-secondary" id="newDubBtn">
+                        Create New Dub
+                    </button>
+                </div>
+            </div>
+
+            <div id="jobsSection" class="card">
+                <h2>Recent Jobs</h2>
+                <div id="jobsList">
+                    <p class="text-muted">No jobs yet. Start by creating a new dub!</p>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Built for Autodub Hackathon | Powered by Deepgram, OpenAI & ElevenLabs</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
