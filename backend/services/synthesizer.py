@@ -1,6 +1,10 @@
-from elevenlabs import generate, set_api_key, voices, Voice
+from elevenlabs.client import ElevenLabs
 import os
+import logging
 from pathlib import Path
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 class SpeechSynthesizer:
     """Service for synthesizing speech using ElevenLabs"""
@@ -10,7 +14,8 @@ class SpeechSynthesizer:
         if not self.api_key:
             raise ValueError("ElevenLabs API key is required")
         
-        set_api_key(self.api_key)
+        # Initialize ElevenLabs client (SDK 1.0.0)
+        self.client = ElevenLabs(api_key=self.api_key)
         self.output_dir = output_dir
         Path(output_dir).mkdir(parents=True, exist_ok=True)
     
@@ -22,7 +27,7 @@ class SpeechSynthesizer:
             list: Available voices
         """
         try:
-            available_voices = voices()
+            available_voices = self.client.voices.get_all()
             return available_voices
         except Exception as e:
             raise Exception(f"Failed to fetch voices: {str(e)}")
@@ -40,16 +45,38 @@ class SpeechSynthesizer:
             bytes: Audio data
         """
         try:
-            audio = generate(
+            logger.info(f"[SYNTHESIZER] Generating speech for text: {text[:50]}...")
+            logger.info(f"[SYNTHESIZER] Using voice_id: {voice_id}, model: {model}")
+            
+            # Use new SDK 1.0.0 API
+            audio_generator = self.client.generate(
                 text=text,
                 voice=voice_id,
                 model=model
             )
             
+            # Convert generator to bytes
+            audio = b''.join(audio_generator)
+            
+            logger.info(f"[SYNTHESIZER] Successfully generated {len(audio)} bytes of audio")
             return audio
             
         except Exception as e:
-            raise Exception(f"Speech synthesis failed: {str(e)}")
+            error_type = type(e).__name__
+            error_msg = str(e)
+            logger.error(f"[SYNTHESIZER ERROR] Type: {error_type}")
+            logger.error(f"[SYNTHESIZER ERROR] Message: {error_msg}")
+            logger.error(f"[SYNTHESIZER ERROR] Full exception: {repr(e)}")
+            
+            # Check for specific error types
+            if 'rate' in error_msg.lower() or 'limit' in error_msg.lower():
+                logger.error("[SYNTHESIZER ERROR] RATE LIMIT DETECTED - ElevenLabs API quota exceeded")
+            elif 'quota' in error_msg.lower():
+                logger.error("[SYNTHESIZER ERROR] QUOTA EXCEEDED - ElevenLabs character limit reached")
+            elif 'auth' in error_msg.lower() or 'key' in error_msg.lower():
+                logger.error("[SYNTHESIZER ERROR] AUTHENTICATION ERROR - Invalid API key")
+            
+            raise Exception(f"Speech synthesis failed [{error_type}]: {error_msg}")
     
     def synthesize_segment(self, segment, voice_id='21m00Tcm4TlvDq8ikWAM', output_path=None):
         """
@@ -117,7 +144,9 @@ class SpeechSynthesizer:
                 synthesized_segments.append(synthesized_segment)
                 
             except Exception as e:
-                print(f"Warning: Failed to synthesize segment {i}: {str(e)}")
+                error_msg = str(e)
+                logger.error(f"[SYNTHESIZER] Failed to synthesize segment {i}: {error_msg}")
+                print(f"Warning: Failed to synthesize segment {i}: {error_msg}")
                 # Add segment without audio
                 synthesized_segments.append(segment)
         

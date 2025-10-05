@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import os
+import logging
 from dotenv import load_dotenv
 import uuid
 from pathlib import Path
@@ -8,6 +9,14 @@ from job_manager import job_manager
 
 # Load environment variables
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 # Initialize Flask app
 app = Flask(__name__)

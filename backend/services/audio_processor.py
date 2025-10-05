@@ -124,9 +124,13 @@ class AudioProcessor:
                         gap = segment['start'] - segments[i-1]['end']
                         if gap > 0:
                             silence_file = self._create_silence(gap)
-                            f.write(f"file '{silence_file}'\n")
+                            # Use absolute path for silence file
+                            silence_abs_path = os.path.abspath(silence_file)
+                            f.write(f"file '{silence_abs_path}'\n")
                     
-                    f.write(f"file '{segment['audio_path']}'\n")
+                    # Use absolute path for segment audio
+                    segment_abs_path = os.path.abspath(segment['audio_path'])
+                    f.write(f"file '{segment_abs_path}'\n")
             
             # Concatenate using ffmpeg
             cmd = [

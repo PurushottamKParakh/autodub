@@ -1,11 +1,15 @@
 import os
 import time
+import logging
 from pathlib import Path
 from .downloader import VideoDownloader
 from .transcriber import Transcriber
 from .translator import Translator
 from .synthesizer import SpeechSynthesizer
 from .audio_processor import AudioProcessor
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 class DubbingPipeline:
     """
@@ -56,9 +60,25 @@ class DubbingPipeline:
         """
         try:
             # Step 1: Download video and extract audio
+            logger.info(f"\n{'='*80}")
+            logger.info(f"[STAGE 1/6] DOWNLOADING VIDEO")
+            logger.info(f"{'='*80}")
+            logger.info(f"Job ID: {self.job_id}")
+            logger.info(f"YouTube URL: {self.youtube_url}")
+            logger.info(f"Target Language: {self.target_language}")
+            logger.info(f"Source Language: {self.source_language}")
+            
             self.update_progress(10, 'processing', 'Downloading video from YouTube...')
             video_info = self.downloader.download_video(self.youtube_url, self.job_id)
             self.video_path = video_info['video_path']
+            
+            logger.info(f"✅ STAGE 1 COMPLETE: Video downloaded successfully")
+            logger.info(f"   Video Path: {self.video_path}")
+            logger.info(f"   Video Title: {video_info.get('title', 'Unknown')}")
+            
+            logger.info(f"\n{'='*80}")
+            logger.info(f"[STAGE 2/6] EXTRACTING AUDIO")
+            logger.info(f"{'='*80}")
             
             self.update_progress(20, 'processing', 'Extracting audio from video...')
             self.audio_path = self.audio_processor.extract_audio_from_video(
@@ -66,7 +86,15 @@ class DubbingPipeline:
                 os.path.join('temp', f'{self.job_id}_original_audio.wav')
             )
             
+            logger.info(f"✅ STAGE 2 COMPLETE: Audio extracted successfully")
+            logger.info(f"   Audio Path: {self.audio_path}")
+            
             # Step 2: Transcribe audio
+            logger.info(f"\n{'='*80}")
+            logger.info(f"[STAGE 3/6] TRANSCRIBING AUDIO")
+            logger.info(f"{'='*80}")
+            logger.info(f"Language: {self.source_language}")
+            
             self.update_progress(30, 'processing', 'Transcribing audio...')
             self.transcription = self.transcriber.transcribe_audio(
                 self.audio_path,
@@ -76,9 +104,17 @@ class DubbingPipeline:
             if not self.transcription or not self.transcription.get('segments'):
                 raise Exception("Transcription failed or returned no segments")
             
-            print(f"Transcribed {len(self.transcription['segments'])} segments")
+            logger.info(f"✅ STAGE 3 COMPLETE: Transcription successful")
+            logger.info(f"   Segments: {len(self.transcription['segments'])}")
+            logger.info(f"   Full Text Preview: {self.transcription.get('full_text', '')[:100]}...")
             
             # Step 3: Translate segments
+            logger.info(f"\n{'='*80}")
+            logger.info(f"[STAGE 4/6] TRANSLATING TEXT")
+            logger.info(f"{'='*80}")
+            logger.info(f"From: {self.source_language} → To: {self.target_language}")
+            logger.info(f"Segments to translate: {len(self.transcription['segments'])}")
+            
             self.update_progress(45, 'processing', 'Translating text...')
             self.translated_segments = self.translator.batch_translate_segments(
                 self.transcription['segments'],
@@ -86,24 +122,44 @@ class DubbingPipeline:
                 self.source_language
             )
             
-            print(f"Translated {len(self.translated_segments)} segments")
+            logger.info(f"✅ STAGE 4 COMPLETE: Translation successful")
+            logger.info(f"   Translated Segments: {len(self.translated_segments)}")
+            if self.translated_segments:
+                logger.info(f"   Sample Translation: '{self.translated_segments[0].get('original_text', '')[:50]}' → '{self.translated_segments[0].get('translated_text', '')[:50]}'")
             
             # Step 4: Synthesize speech
-            self.update_progress(60, 'processing', 'Synthesizing speech...')
+            logger.info(f"\n{'='*80}")
+            logger.info(f"[STAGE 5/6] SYNTHESIZING SPEECH")
+            logger.info(f"{'='*80}")
             voice_id = self.synthesizer.get_voice_for_language(self.target_language)
+            logger.info(f"Voice ID: {voice_id}")
+            logger.info(f"Segments to synthesize: {len(self.translated_segments)}")
+            
+            self.update_progress(60, 'processing', 'Synthesizing speech...')
             self.synthesized_segments = self.synthesizer.synthesize_segments(
                 self.translated_segments,
                 voice_id=voice_id,
                 job_id=self.job_id
             )
             
-            print(f"Synthesized {len(self.synthesized_segments)} audio segments")
+            logger.info(f"✅ STAGE 5 COMPLETE: Speech synthesis successful")
+            logger.info(f"   Synthesized Segments: {len(self.synthesized_segments)}")
+            segments_with_audio = sum(1 for s in self.synthesized_segments if 'audio_path' in s)
+            logger.info(f"   Segments with audio: {segments_with_audio}/{len(self.synthesized_segments)}")
             
             # Step 5: Align and concatenate audio
+            logger.info(f"\n{'='*80}")
+            logger.info(f"[STAGE 6/6] ALIGNING & MERGING AUDIO")
+            logger.info(f"{'='*80}")
+            
             self.update_progress(75, 'processing', 'Aligning audio segments...')
             self.dubbed_audio_path = self._align_and_merge_audio()
             
+            logger.info(f"✅ Audio alignment complete")
+            logger.info(f"   Dubbed Audio Path: {self.dubbed_audio_path}")
+            
             # Step 6: Merge dubbed audio with video
+            logger.info(f"\n📹 Merging dubbed audio with original video...")
             self.update_progress(90, 'processing', 'Merging audio with video...')
             self.output_video_path = os.path.join(
                 'outputs',
@@ -118,7 +174,18 @@ class DubbingPipeline:
                 self.output_video_path
             )
             
+            logger.info(f"✅ STAGE 6 COMPLETE: Video merging successful")
+            logger.info(f"   Output Video: {self.output_video_path}")
+            
             # Step 7: Complete
+            logger.info(f"\n{'='*80}")
+            logger.info(f"🎉 DUBBING PIPELINE COMPLETE!")
+            logger.info(f"{'='*80}")
+            logger.info(f"Job ID: {self.job_id}")
+            logger.info(f"Output File: {self.output_video_path}")
+            logger.info(f"Total Segments: {len(self.synthesized_segments)}")
+            logger.info(f"{'='*80}\n")
+            
             self.update_progress(100, 'completed', 'Dubbing completed successfully!')
             
             return {
@@ -129,7 +196,14 @@ class DubbingPipeline:
             }
             
         except Exception as e:
-            self.update_progress(self.progress, 'failed', f'Error: {str(e)}')
+            error_type = type(e).__name__
+            error_msg = str(e)
+            logger.error(f"[PIPELINE ERROR] Job {self.job_id} failed")
+            logger.error(f"[PIPELINE ERROR] Type: {error_type}")
+            logger.error(f"[PIPELINE ERROR] Message: {error_msg}")
+            logger.error(f"[PIPELINE ERROR] Full exception: {repr(e)}")
+            
+            self.update_progress(self.progress, 'failed', f'Error: {error_msg}')
             raise
     
     def _align_and_merge_audio(self):

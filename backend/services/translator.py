@@ -8,7 +8,12 @@ class Translator:
         self.api_key = api_key or os.getenv('OPENAI_API_KEY')
         if not self.api_key:
             raise ValueError("OpenAI API key is required")
-        self.client = OpenAI(api_key=self.api_key)
+        # Initialize OpenAI client without proxies parameter
+        try:
+            self.client = OpenAI(api_key=self.api_key, max_retries=2, timeout=60.0)
+        except TypeError:
+            # Fallback for older SDK versions
+            self.client = OpenAI(api_key=self.api_key)
     
     def translate_text(self, text, target_language, source_language='en'):
         """

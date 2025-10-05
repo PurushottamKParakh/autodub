@@ -1,14 +1,34 @@
-from deepgram import DeepgramClient, PrerecordedOptions
+from deepgram import DeepgramClient, PrerecordedOptions, FileSource
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 class Transcriber:
     """Service for transcribing audio using Deepgram"""
     
     def __init__(self, api_key=None):
+        # CRITICAL: Clear proxy environment variables FIRST
+        proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 
+                      'ALL_PROXY', 'all_proxy', 'NO_PROXY', 'no_proxy']
+        for var in proxy_vars:
+            if var in os.environ:
+                del os.environ[var]
+        
         self.api_key = api_key or os.getenv('DEEPGRAM_API_KEY')
         if not self.api_key:
             raise ValueError("Deepgram API key is required")
-        self.client = DeepgramClient(self.api_key)
+        
+        logger.info(f"[TRANSCRIBER] Initializing Deepgram client...")
+        logger.info(f"[TRANSCRIBER] API key found: {self.api_key[:10]}...{self.api_key[-4:]}")
+        
+        # Initialize client with API key
+        try:
+            self.client = DeepgramClient(api_key=self.api_key)
+            logger.info(f"[TRANSCRIBER] ✅ Deepgram client initialized successfully")
+        except Exception as e:
+            logger.error(f"[TRANSCRIBER] ❌ Failed to initialize Deepgram client: {e}")
+            raise
     
     def transcribe_audio(self, audio_path, language='en'):
         """
@@ -22,46 +42,48 @@ class Transcriber:
             dict: Transcription with timestamps
         """
         try:
+            logger.info(f"[TRANSCRIBER] Reading audio file: {audio_path}")
+            
             with open(audio_path, 'rb') as audio_file:
                 buffer_data = audio_file.read()
             
-            payload = {'buffer': buffer_data}
+            # Create payload
+            payload: FileSource = {
+                "buffer": buffer_data,
+            }
             
+            # Configure options
             options = PrerecordedOptions(
-                model='nova-2',
+                model="nova-2",
                 language=language,
                 smart_format=True,
                 punctuate=True,
                 paragraphs=True,
                 utterances=True,
-                diarize=True,  # Speaker diarization for multi-speaker support
+                diarize=True
             )
             
-            response = self.client.listen.prerecorded.v('1').transcribe_file(
-                payload, options
+            logger.info(f"[TRANSCRIBER] Sending transcription request...")
+            
+            # Call the transcribe_file method
+            response = self.client.listen.prerecorded.v("1").transcribe_file(
+                payload, 
+                options
             )
             
-            # Extract transcription with timestamps
-            result = response.to_dict()
+            logger.info(f"[TRANSCRIBER] ✅ Transcription completed")
             
             # Parse the response
-            transcription_data = self._parse_transcription(result)
+            transcription_data = self._parse_transcription(response.to_dict())
             
             return transcription_data
             
         except Exception as e:
+            logger.error(f"[TRANSCRIBER] ❌ Transcription failed: {str(e)}")
             raise Exception(f"Transcription failed: {str(e)}")
     
     def _parse_transcription(self, response):
-        """
-        Parse Deepgram response to extract text and timestamps
-        
-        Args:
-            response: Deepgram API response
-            
-        Returns:
-            dict: Parsed transcription data
-        """
+        """Parse Deepgram response to extract text and timestamps"""
         try:
             results = response.get('results', {})
             channels = results.get('channels', [])
@@ -73,14 +95,10 @@ class Transcriber:
             if not alternatives:
                 return {'segments': [], 'full_text': ''}
             
-            # Get words with timestamps
             words = alternatives[0].get('words', [])
             paragraphs = alternatives[0].get('paragraphs', {})
-            
-            # Extract full text
             full_text = alternatives[0].get('transcript', '')
             
-            # Group words into segments (sentences/utterances)
             segments = []
             if paragraphs and 'paragraphs' in paragraphs:
                 for para in paragraphs['paragraphs']:
@@ -91,7 +109,6 @@ class Transcriber:
                             'end': sentence.get('end', 0)
                         })
             else:
-                # Fallback: create segments from words
                 segments = self._create_segments_from_words(words)
             
             return {
@@ -104,23 +121,9 @@ class Transcriber:
             raise Exception(f"Failed to parse transcription: {str(e)}")
     
     def _create_segments_from_words(self, words, max_duration=10):
-        """
-        Create segments from words when sentence info is not available
-        
-        Args:
-            words: List of words with timestamps
-            max_duration: Maximum duration per segment in seconds
-            
-        Returns:
-            list: Segments with text and timestamps
-        """
+        """Create segments from words when sentence info is not available"""
         segments = []
-        current_segment = {
-            'text': '',
-            'start': 0,
-            'end': 0,
-            'words': []
-        }
+        current_segment = {'text': '', 'start': 0, 'end': 0, 'words': []}
         
         for word in words:
             word_text = word.get('word', '')
@@ -134,7 +137,6 @@ class Transcriber:
             current_segment['end'] = word_end
             current_segment['words'].append(word)
             
-            # Create new segment if duration exceeds max or sentence ends
             if (word_end - current_segment['start'] > max_duration or 
                 word_text.endswith('.') or word_text.endswith('?') or word_text.endswith('!')):
                 
@@ -144,14 +146,8 @@ class Transcriber:
                     'end': current_segment['end']
                 })
                 
-                current_segment = {
-                    'text': '',
-                    'start': 0,
-                    'end': 0,
-                    'words': []
-                }
+                current_segment = {'text': '', 'start': 0, 'end': 0, 'words': []}
         
-        # Add remaining segment
         if current_segment['text']:
             segments.append({
                 'text': current_segment['text'].strip(),
