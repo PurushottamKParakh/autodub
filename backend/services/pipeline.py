@@ -17,11 +17,13 @@ class DubbingPipeline:
     Download → Transcribe → Translate → Synthesize → Align → Merge
     """
     
-    def __init__(self, job_id, youtube_url, target_language, source_language='en'):
+    def __init__(self, job_id, youtube_url, target_language, source_language='en', start_time=None, end_time=None):
         self.job_id = job_id
         self.youtube_url = youtube_url
         self.target_language = target_language
         self.source_language = source_language
+        self.start_time = start_time
+        self.end_time = end_time
         
         # Initialize services
         self.downloader = VideoDownloader(output_dir='temp')
@@ -67,9 +69,16 @@ class DubbingPipeline:
             logger.info(f"YouTube URL: {self.youtube_url}")
             logger.info(f"Target Language: {self.target_language}")
             logger.info(f"Source Language: {self.source_language}")
+            logger.info(f"Start Time: {self.start_time}")
+            logger.info(f"End Time: {self.end_time}")
             
             self.update_progress(10, 'processing', 'Downloading video from YouTube...')
-            video_info = self.downloader.download_video(self.youtube_url, self.job_id)
+            video_info = self.downloader.download_video(
+                self.youtube_url, 
+                self.job_id,
+                start_time=self.start_time,
+                end_time=self.end_time
+            )
             self.video_path = video_info['video_path']
             
             logger.info(f"✅ STAGE 1 COMPLETE: Video downloaded successfully")

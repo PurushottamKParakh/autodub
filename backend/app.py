@@ -48,11 +48,15 @@ def create_dub_job():
     {
         "youtube_url": "https://www.youtube.com/watch?v=...",
         "target_language": "es",
-        "source_language": "en"  (optional)
+        "source_language": "en",  (optional)
+        "start_time": 20,  (optional, in seconds)
+        "end_time": 40  (optional, in seconds)
     }
     """
     try:
         data = request.get_json()
+        
+        logger.info(f"[API] Received request data: {data}")
         
         if not data or 'youtube_url' not in data:
             return jsonify({'error': 'youtube_url is required'}), 400
@@ -60,6 +64,18 @@ def create_dub_job():
         youtube_url = data['youtube_url']
         target_language = data.get('target_language', 'es')
         source_language = data.get('source_language', 'en')
+        start_time = data.get('start_time')  # Can be None
+        end_time = data.get('end_time')  # Can be None
+        
+        logger.info(f"[API] Parsed - start_time: {start_time}, end_time: {end_time}")
+        
+        # Validate time parameters
+        if start_time is not None and (not isinstance(start_time, int) or start_time < 0):
+            return jsonify({'error': 'start_time must be a non-negative integer'}), 400
+        if end_time is not None and (not isinstance(end_time, int) or end_time < 0):
+            return jsonify({'error': 'end_time must be a non-negative integer'}), 400
+        if start_time is not None and end_time is not None and start_time >= end_time:
+            return jsonify({'error': 'start_time must be less than end_time'}), 400
         
         # Generate unique job ID
         job_id = str(uuid.uuid4())
@@ -69,7 +85,9 @@ def create_dub_job():
             job_id=job_id,
             youtube_url=youtube_url,
             target_language=target_language,
-            source_language=source_language
+            source_language=source_language,
+            start_time=start_time,
+            end_time=end_time
         )
         
         return jsonify({

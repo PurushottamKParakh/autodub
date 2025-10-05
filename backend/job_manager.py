@@ -11,7 +11,7 @@ class JobManager:
         self.jobs = {}
         self.lock = threading.Lock()
     
-    def create_job(self, job_id, youtube_url, target_language, source_language='en'):
+    def create_job(self, job_id, youtube_url, target_language, source_language='en', start_time=None, end_time=None):
         """
         Create a new dubbing job
         
@@ -20,16 +20,24 @@ class JobManager:
             youtube_url: YouTube video URL
             target_language: Target language code
             source_language: Source language code
+            start_time: Optional start time in seconds
+            end_time: Optional end time in seconds
             
         Returns:
             dict: Job information
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[JOB_MANAGER] Creating job with start_time={start_time}, end_time={end_time}")
+        
         with self.lock:
             self.jobs[job_id] = {
                 'job_id': job_id,
                 'youtube_url': youtube_url,
                 'target_language': target_language,
                 'source_language': source_language,
+                'start_time': start_time,
+                'end_time': end_time,
                 'status': 'queued',
                 'progress': 0,
                 'message': 'Job queued for processing',
@@ -40,7 +48,7 @@ class JobManager:
         # Start processing in background thread
         thread = threading.Thread(
             target=self._process_job,
-            args=(job_id, youtube_url, target_language, source_language)
+            args=(job_id, youtube_url, target_language, source_language, start_time, end_time)
         )
         thread.daemon = True
         thread.start()
@@ -70,7 +78,7 @@ class JobManager:
         with self.lock:
             return list(self.jobs.values())
     
-    def _process_job(self, job_id, youtube_url, target_language, source_language):
+    def _process_job(self, job_id, youtube_url, target_language, source_language, start_time=None, end_time=None):
         """
         Process a dubbing job in background
         
@@ -79,6 +87,8 @@ class JobManager:
             youtube_url: YouTube video URL
             target_language: Target language code
             source_language: Source language code
+            start_time: Optional start time in seconds
+            end_time: Optional end time in seconds
         """
         try:
             # Create pipeline
@@ -86,7 +96,9 @@ class JobManager:
                 job_id=job_id,
                 youtube_url=youtube_url,
                 target_language=target_language,
-                source_language=source_language
+                source_language=source_language,
+                start_time=start_time,
+                end_time=end_time
             )
             
             # Update job status periodically

@@ -37,20 +37,35 @@ async function handleSubmit(e) {
     
     const youtubeUrl = document.getElementById('youtubeUrl').value;
     const targetLanguage = document.getElementById('targetLanguage').value;
+    const startTime = document.getElementById('startTime').value;
+    const endTime = document.getElementById('endTime').value;
     
     try {
         submitBtn.disabled = true;
         submitBtn.textContent = 'Creating Job...';
+        
+        // Build request body
+        const requestBody = {
+            youtube_url: youtubeUrl,
+            target_language: targetLanguage
+        };
+        
+        // Add optional time parameters if provided
+        if (startTime !== '' && startTime !== null) {
+            requestBody.start_time = parseInt(startTime);
+        }
+        if (endTime !== '' && endTime !== null) {
+            requestBody.end_time = parseInt(endTime);
+        }
+        
+        console.log('Sending request body:', requestBody);
         
         const response = await fetch(`${API_BASE_URL}/api/dub`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-                youtube_url: youtubeUrl,
-                target_language: targetLanguage
-            })
+            body: JSON.stringify(requestBody)
         });
         
         if (!response.ok) {
