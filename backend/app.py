@@ -66,6 +66,7 @@ def create_dub_job():
         source_language = data.get('source_language', 'en')
         start_time = data.get('start_time')  # Can be None
         end_time = data.get('end_time')  # Can be None
+        use_voice_cloning = data.get('use_voice_cloning', False)
         
         logger.info(f"[API] Parsed - start_time: {start_time}, end_time: {end_time}")
         
@@ -87,7 +88,8 @@ def create_dub_job():
             target_language=target_language,
             source_language=source_language,
             start_time=start_time,
-            end_time=end_time
+            end_time=end_time,
+            use_voice_cloning=use_voice_cloning
         )
         
         return jsonify({

@@ -290,3 +290,80 @@ class SpeechSynthesizer:
         """
         voice_pool = VOICE_POOLS.get(language_code.lower(), VOICE_POOLS['default'])
         return voice_pool[0]  # Return first voice as default
+    
+    def synthesize_segments_with_cloned_voices(self, segments, cloned_voices, 
+                                              language_code='en', model='eleven_multilingual_v2'):
+        """
+        Synthesize segments using cloned voices
+        
+        Args:
+            segments: List of segments to synthesize
+            cloned_voices: dict {speaker_id: voice_id} mapping
+            language_code: Target language code
+            model: ElevenLabs model to use
+            
+        Returns:
+            list: Segments with audio_path added
+        """
+        try:
+            logger.info(f"[SYNTHESIZER] Synthesizing with cloned voices")
+            logger.info(f"[SYNTHESIZER] Cloned voices: {cloned_voices}")
+            logger.info(f"[SYNTHESIZER] Segments to synthesize: {len(segments)}")
+            
+            synthesized_segments = []
+            
+            for i, segment in enumerate(segments):
+                speaker = segment.get('speaker', 0)
+                text = segment.get('translated_text') or segment.get('text', '')
+                
+                if not text:
+                    logger.warning(f"[SYNTHESIZER] Segment {i} has no text, skipping")
+                    synthesized_segments.append(segment)
+                    continue
+                
+                # Get cloned voice for this speaker
+                voice_id = cloned_voices.get(speaker)
+                
+                if not voice_id:
+                    logger.warning(
+                        f"[SYNTHESIZER] No cloned voice for speaker {speaker}, "
+                        f"using default voice"
+                    )
+                    voice_id = self.default_voice_id
+                
+                logger.info(f"[SYNTHESIZER] Segment {i}: Speaker {speaker} → Voice {voice_id[:8]}...")
+                logger.info(f"[SYNTHESIZER] Generating speech for text: {text[:50]}...")
+                logger.info(f"[SYNTHESIZER] Using voice_id: {voice_id}, model: {model}")
+                
+                # Generate speech
+                audio_data = self.client.text_to_speech.convert(
+                    voice_id=voice_id,
+                    text=text,
+                    model_id=model,
+                    output_format='mp3_44100_128'
+                )
+                
+                # Save audio to file
+                audio_path = os.path.join(
+                    self.output_dir,
+                    f'segment_{i}_{speaker}.mp3'
+                )
+                
+                # Write audio data
+                with open(audio_path, 'wb') as f:
+                    for chunk in audio_data:
+                        f.write(chunk)
+                
+                audio_size = os.path.getsize(audio_path)
+                logger.info(f"[SYNTHESIZER] Successfully generated {audio_size} bytes of audio")
+                
+                # Add audio path to segment
+                segment['audio_path'] = audio_path
+                synthesized_segments.append(segment)
+            
+            logger.info(f"[SYNTHESIZER] ✅ Synthesized {len(synthesized_segments)} segments with cloned voices")
+            return synthesized_segments
+            
+        except Exception as e:
+            logger.error(f"[SYNTHESIZER] ❌ Synthesis failed: {str(e)}")
+            raise

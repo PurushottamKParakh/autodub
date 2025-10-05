@@ -11,7 +11,7 @@ class JobManager:
         self.jobs = {}
         self.lock = threading.Lock()
     
-    def create_job(self, job_id, youtube_url, target_language, source_language='en', start_time=None, end_time=None):
+    def create_job(self, job_id, youtube_url, target_language, source_language='en', start_time=None, end_time=None, use_voice_cloning=False):
         """
         Create a new dubbing job
         
@@ -38,6 +38,7 @@ class JobManager:
                 'source_language': source_language,
                 'start_time': start_time,
                 'end_time': end_time,
+                'use_voice_cloning': use_voice_cloning,
                 'status': 'queued',
                 'progress': 0,
                 'message': 'Job queued for processing',
@@ -48,7 +49,7 @@ class JobManager:
         # Start processing in background thread
         thread = threading.Thread(
             target=self._process_job,
-            args=(job_id, youtube_url, target_language, source_language, start_time, end_time)
+            args=(job_id, youtube_url, target_language, source_language, start_time, end_time, use_voice_cloning)
         )
         thread.daemon = True
         thread.start()
@@ -78,7 +79,7 @@ class JobManager:
         with self.lock:
             return list(self.jobs.values())
     
-    def _process_job(self, job_id, youtube_url, target_language, source_language, start_time=None, end_time=None):
+    def _process_job(self, job_id, youtube_url, target_language, source_language, start_time=None, end_time=None, use_voice_cloning=False):
         """
         Process a dubbing job in background
         
@@ -98,7 +99,8 @@ class JobManager:
                 target_language=target_language,
                 source_language=source_language,
                 start_time=start_time,
-                end_time=end_time
+                end_time=end_time,
+                use_voice_cloning=use_voice_cloning
             )
             
             # Update job status periodically

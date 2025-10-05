@@ -8,6 +8,8 @@ from .translator import Translator
 from .synthesizer import SpeechSynthesizer
 from .audio_processor import AudioProcessor
 from .audio_separator import AudioSeparator
+from .speaker_extractor import SpeakerExtractor
+from .voice_cloner import VoiceCloner
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -18,11 +20,12 @@ class DubbingPipeline:
     Download → Transcribe → Translate → Synthesize → Align → Merge
     """
     
-    def __init__(self, job_id, youtube_url, target_language, source_language='en', start_time=None, end_time=None):
+    def __init__(self, job_id, youtube_url, target_language, source_language='en', start_time=None, end_time=None, use_voice_cloning=False):
         self.job_id = job_id
         self.youtube_url = youtube_url
         self.target_language = target_language
         self.source_language = source_language
+        self.use_voice_cloning = use_voice_cloning
         self.start_time = start_time
         self.end_time = end_time
         
@@ -32,6 +35,9 @@ class DubbingPipeline:
         self.translator = Translator()
         self.synthesizer = SpeechSynthesizer(output_dir='temp')
         self.audio_separator = AudioSeparator(temp_dir='temp')
+        self.speaker_extractor = SpeakerExtractor(temp_dir='temp')
+        self.voice_cloner = VoiceCloner()
+        self.cloned_voices = {}
         self.audio_processor = AudioProcessor(temp_dir='temp')
         
         # Paths
@@ -140,6 +146,55 @@ class DubbingPipeline:
             logger.info(f"   Segments: {len(self.transcription['segments'])}")
             logger.info(f"   Speakers: {self.transcription.get('speaker_count', 1)}")
             logger.info(f"   Full Text Preview: {self.transcription.get('full_text', '')[:100]}...")
+
+            # Voice Cloning Stages (if enabled)
+            if self.use_voice_cloning:
+                # Stage 3.5: Extract speaker audio samples
+                logger.info(f"\n{'='*80}")
+                logger.info(f"[STAGE 3.5/8] EXTRACTING SPEAKER AUDIO SAMPLES")
+                logger.info(f"{'='*80}")
+                
+                self.update_progress(35, 'processing', 'Extracting speaker audio samples...')
+                
+                speaker_samples = self.speaker_extractor.extract_speaker_samples(
+                    self.vocals_path,
+                    self.transcription['segments'],
+                    self.job_id,
+                    min_duration=10.0,
+                    max_duration=60.0
+                )
+                
+                logger.info(f"✅ STAGE 3.5 COMPLETE: Extracted samples for {len(speaker_samples)} speaker(s)")
+                for speaker_id, path in speaker_samples.items():
+                    logger.info(f"   Speaker {speaker_id}: {path}")
+                
+                # Stage 3.6: Clone voices
+                logger.info(f"\n{'='*80}")
+                logger.info(f"[STAGE 3.6/8] CLONING VOICES")
+                logger.info(f"{'='*80}")
+                
+                self.update_progress(38, 'processing', 'Cloning voices...')
+                
+                for speaker_id, audio_path in speaker_samples.items():
+                    voice_name = f"{self.job_id}_speaker_{speaker_id}"
+                    
+                    logger.info(f"[PIPELINE] Cloning voice for speaker {speaker_id}")
+                    
+                    try:
+                        voice_id = self.voice_cloner.clone_voice(
+                            audio_path,
+                            voice_name,
+                            description=f"Cloned voice from job {self.job_id}"
+                        )
+                        
+                        self.cloned_voices[speaker_id] = voice_id
+                        logger.info(f"[PIPELINE] Speaker {speaker_id} → Voice ID: {voice_id}")
+                    except Exception as e:
+                        logger.error(f"[PIPELINE] Failed to clone voice for speaker {speaker_id}: {str(e)}")
+                        logger.warning(f"[PIPELINE] Will use stock voice for speaker {speaker_id}")
+                
+                logger.info(f"✅ STAGE 3.6 COMPLETE: Cloned {len(self.cloned_voices)} voice(s)")
+            
             
             # Step 3: Translate segments
             logger.info(f"\n{'='*80}")
@@ -162,22 +217,33 @@ class DubbingPipeline:
             
             # Step 4: Synthesize speech
             logger.info(f"\n{'='*80}")
-            logger.info(f"[STAGE 5/6] SYNTHESIZING SPEECH")
+            logger.info(f"[STAGE 5/8] SYNTHESIZING SPEECH")
             logger.info(f"{'='*80}")
-            voice_id = self.synthesizer.get_voice_for_language(self.target_language)
-            speaker_count = self.transcription.get('speaker_count', 1)
-            logger.info(f"Default Voice ID: {voice_id}")
-            logger.info(f"Segments to synthesize: {len(self.translated_segments)}")
-            logger.info(f"Multi-speaker mode: {'Enabled' if speaker_count > 1 else 'Disabled'}")
             
             self.update_progress(60, 'processing', 'Synthesizing speech...')
-            self.synthesized_segments = self.synthesizer.synthesize_segments(
-                self.translated_segments,
-                voice_id=voice_id,
-                job_id=self.job_id,
-                language_code=self.target_language,
-                multi_speaker=True  # Always enabled, will auto-detect speakers
-            )
+            
+            if self.use_voice_cloning and self.cloned_voices:
+                logger.info(f"[PIPELINE] Using cloned voices for synthesis")
+                logger.info(f"[PIPELINE] Cloned voices: {self.cloned_voices}")
+                self.synthesized_segments = self.synthesizer.synthesize_segments_with_cloned_voices(
+                    self.translated_segments,
+                    self.cloned_voices,
+                    language_code=self.target_language
+                )
+            else:
+                voice_id = self.synthesizer.get_voice_for_language(self.target_language)
+                speaker_count = self.transcription.get('speaker_count', 1)
+                logger.info(f"[PIPELINE] Using stock voices for synthesis")
+                logger.info(f"Default Voice ID: {voice_id}")
+                logger.info(f"Segments to synthesize: {len(self.translated_segments)}")
+                logger.info(f"Multi-speaker mode: {'Enabled' if speaker_count > 1 else 'Disabled'}")
+                self.synthesized_segments = self.synthesizer.synthesize_segments(
+                    self.translated_segments,
+                    voice_id=voice_id,
+                    job_id=self.job_id,
+                    language_code=self.target_language,
+                    multi_speaker=True
+                )
             
             logger.info(f"✅ STAGE 5 COMPLETE: Speech synthesis successful")
             logger.info(f"   Synthesized Segments: {len(self.synthesized_segments)}")

@@ -40,6 +40,7 @@ async function handleSubmit(e) {
     const targetLanguage = document.getElementById('targetLanguage').value;
     const startTime = document.getElementById('startTime').value;
     const endTime = document.getElementById('endTime').value;
+    const useVoiceCloning = document.getElementById('useVoiceCloning').checked;
     
     try {
         submitBtn.disabled = true;
@@ -49,7 +50,8 @@ async function handleSubmit(e) {
         const requestBody = {
             youtube_url: youtubeUrl,
             source_language: sourceLanguage,
-            target_language: targetLanguage
+            target_language: targetLanguage,
+            use_voice_cloning: useVoiceCloning,
         };
         
         // Add optional time parameters if provided
