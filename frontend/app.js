@@ -36,6 +36,7 @@ async function handleSubmit(e) {
     e.preventDefault();
     
     const youtubeUrl = document.getElementById('youtubeUrl').value;
+    const sourceLanguage = document.getElementById('sourceLanguage').value;
     const targetLanguage = document.getElementById('targetLanguage').value;
     const startTime = document.getElementById('startTime').value;
     const endTime = document.getElementById('endTime').value;
@@ -47,6 +48,7 @@ async function handleSubmit(e) {
         // Build request body
         const requestBody = {
             youtube_url: youtubeUrl,
+            source_language: sourceLanguage,
             target_language: targetLanguage
         };
         

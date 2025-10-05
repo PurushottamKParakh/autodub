@@ -29,6 +29,7 @@ class Translator:
         """
         try:
             language_map = {
+                'en': 'English',
                 'es': 'Spanish',
                 'fr': 'French',
                 'de': 'German',
