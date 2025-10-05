@@ -7,6 +7,7 @@ from .transcriber import Transcriber
 from .translator import Translator
 from .synthesizer import SpeechSynthesizer
 from .audio_processor import AudioProcessor
+from .audio_separator import AudioSeparator
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -30,6 +31,7 @@ class DubbingPipeline:
         self.transcriber = Transcriber()
         self.translator = Translator()
         self.synthesizer = SpeechSynthesizer(output_dir='temp')
+        self.audio_separator = AudioSeparator(temp_dir='temp')
         self.audio_processor = AudioProcessor(temp_dir='temp')
         
         # Paths
@@ -38,6 +40,8 @@ class DubbingPipeline:
         self.transcription = None
         self.translated_segments = None
         self.synthesized_segments = None
+        self.background_audio_path = None
+        self.vocals_path = None
         self.dubbed_audio_path = None
         self.output_video_path = None
         
@@ -97,6 +101,25 @@ class DubbingPipeline:
             
             logger.info(f"✅ STAGE 2 COMPLETE: Audio extracted successfully")
             logger.info(f"   Audio Path: {self.audio_path}")
+
+            # Step 2.5: Separate vocals from background
+            logger.info(f"\n{'='*80}")
+            logger.info(f"[STAGE 2.5/7] SEPARATING VOCALS FROM BACKGROUND")
+            logger.info(f"{'='*80}")
+
+            self.update_progress(22, 'processing', 'Separating vocals from background music...')
+
+            separated_audio = self.audio_separator.separate_audio(
+                self.audio_path,
+                self.job_id
+            )
+
+            self.vocals_path = separated_audio['vocals']
+            self.background_audio_path = separated_audio['background']
+
+            logger.info(f"✅ STAGE 2.5 COMPLETE: Audio separation successful")
+            logger.info(f"   Vocals: {self.vocals_path}")
+            logger.info(f"   Background: {self.background_audio_path}")
             
             # Step 2: Transcribe audio
             logger.info(f"\n{'='*80}")
@@ -106,7 +129,7 @@ class DubbingPipeline:
             
             self.update_progress(30, 'processing', 'Transcribing audio...')
             self.transcription = self.transcriber.transcribe_audio(
-                self.audio_path,
+                self.vocals_path,  # Use vocals instead of full audio
                 language=self.source_language
             )
             
@@ -171,6 +194,28 @@ class DubbingPipeline:
             
             logger.info(f"✅ Audio alignment complete")
             logger.info(f"   Dubbed Audio Path: {self.dubbed_audio_path}")
+
+            # Step 6.5: Mix dubbed vocals with original background
+            logger.info(f"\n{'='*80}")
+            logger.info(f"[STAGE 6.5/7] MIXING DUBBED VOCALS WITH BACKGROUND MUSIC")
+            logger.info(f"{'='*80}")
+
+            self.update_progress(85, 'processing', 'Mixing dubbed vocals with background music...')
+
+            final_dubbed_audio = os.path.join('temp', f'{self.job_id}_final_dubbed_audio.mp3')
+            self.audio_separator.mix_vocals_with_background(
+                self.dubbed_audio_path,
+                self.background_audio_path,
+                final_dubbed_audio,
+                vocals_volume=1.0,
+                background_volume=0.7
+            )
+
+            # Use final mixed audio for video merging
+            self.dubbed_audio_path = final_dubbed_audio
+
+            logger.info(f"✅ STAGE 6.5 COMPLETE: Audio mixing successful")
+            logger.info(f"   Final Audio: {self.dubbed_audio_path}")
             
             # Step 6: Merge dubbed audio with video
             logger.info(f"\n📹 Merging dubbed audio with original video...")
@@ -281,6 +326,8 @@ class DubbingPipeline:
         temp_files = [
             self.video_path,
             self.audio_path,
+            self.vocals_path,
+            self.background_audio_path,
             self.dubbed_audio_path
         ]
         
