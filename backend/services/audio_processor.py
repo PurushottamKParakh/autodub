@@ -124,9 +124,11 @@ class AudioProcessor:
                         gap = segment['start'] - segments[i-1]['end']
                         if gap > 0:
                             silence_file = self._create_silence(gap)
-                            # Use absolute path for silence file
-                            silence_abs_path = os.path.abspath(silence_file)
-                            f.write(f"file '{silence_abs_path}'\n")
+                            # Only add silence file if it was created (not None)
+                            if silence_file:
+                                # Use absolute path for silence file
+                                silence_abs_path = os.path.abspath(silence_file)
+                                f.write(f"file '{silence_abs_path}'\n")
                     
                     # Use absolute path for segment audio
                     segment_abs_path = os.path.abspath(segment['audio_path'])
@@ -159,6 +161,11 @@ class AudioProcessor:
         Returns:
             str: Path to silence file
         """
+        # Skip creating silence for very small durations (< 0.01 seconds)
+        # This prevents ffmpeg errors with extremely small values
+        if duration < 0.01:
+            return None
+        
         silence_path = os.path.join(self.temp_dir, f'silence_{duration:.2f}.mp3')
         
         if os.path.exists(silence_path):

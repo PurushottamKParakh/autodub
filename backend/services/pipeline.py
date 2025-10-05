@@ -115,6 +115,7 @@ class DubbingPipeline:
             
             logger.info(f"✅ STAGE 3 COMPLETE: Transcription successful")
             logger.info(f"   Segments: {len(self.transcription['segments'])}")
+            logger.info(f"   Speakers: {self.transcription.get('speaker_count', 1)}")
             logger.info(f"   Full Text Preview: {self.transcription.get('full_text', '')[:100]}...")
             
             # Step 3: Translate segments
@@ -141,14 +142,18 @@ class DubbingPipeline:
             logger.info(f"[STAGE 5/6] SYNTHESIZING SPEECH")
             logger.info(f"{'='*80}")
             voice_id = self.synthesizer.get_voice_for_language(self.target_language)
-            logger.info(f"Voice ID: {voice_id}")
+            speaker_count = self.transcription.get('speaker_count', 1)
+            logger.info(f"Default Voice ID: {voice_id}")
             logger.info(f"Segments to synthesize: {len(self.translated_segments)}")
+            logger.info(f"Multi-speaker mode: {'Enabled' if speaker_count > 1 else 'Disabled'}")
             
             self.update_progress(60, 'processing', 'Synthesizing speech...')
             self.synthesized_segments = self.synthesizer.synthesize_segments(
                 self.translated_segments,
                 voice_id=voice_id,
-                job_id=self.job_id
+                job_id=self.job_id,
+                language_code=self.target_language,
+                multi_speaker=True  # Always enabled, will auto-detect speakers
             )
             
             logger.info(f"✅ STAGE 5 COMPLETE: Speech synthesis successful")

@@ -6,6 +6,89 @@ from pathlib import Path
 # Configure logging
 logger = logging.getLogger(__name__)
 
+# Voice pools for multi-speaker support
+# Each language has multiple voices (different genders/tones)
+VOICE_POOLS = {
+    'en': [
+        '21m00Tcm4TlvDq8ikWAM',  # Rachel - Female
+        'pNInz6obpgDQGcFmaJgB',  # Adam - Male
+        'EXAVITQu4vr4xnSDxMaL',  # Bella - Female
+        'VR6AewLTigWG4xSOukaG',  # Arnold - Male
+    ],
+    'es': [
+        '21m00Tcm4TlvDq8ikWAM',  # Rachel - Multilingual Female
+        'pNInz6obpgDQGcFmaJgB',  # Adam - Multilingual Male
+        'EXAVITQu4vr4xnSDxMaL',  # Bella - Multilingual Female
+        'VR6AewLTigWG4xSOukaG',  # Arnold - Multilingual Male
+    ],
+    'fr': [
+        '21m00Tcm4TlvDq8ikWAM',  # Rachel - Multilingual
+        'pNInz6obpgDQGcFmaJgB',  # Adam - Multilingual
+        'EXAVITQu4vr4xnSDxMaL',  # Bella - Multilingual
+        'VR6AewLTigWG4xSOukaG',  # Arnold - Multilingual
+    ],
+    'de': [
+        '21m00Tcm4TlvDq8ikWAM',  # Rachel - Multilingual
+        'pNInz6obpgDQGcFmaJgB',  # Adam - Multilingual
+        'EXAVITQu4vr4xnSDxMaL',  # Bella - Multilingual
+        'VR6AewLTigWG4xSOukaG',  # Arnold - Multilingual
+    ],
+    'it': [
+        '21m00Tcm4TlvDq8ikWAM',  # Rachel - Multilingual
+        'pNInz6obpgDQGcFmaJgB',  # Adam - Multilingual
+        'EXAVITQu4vr4xnSDxMaL',  # Bella - Multilingual
+        'VR6AewLTigWG4xSOukaG',  # Arnold - Multilingual
+    ],
+    'pt': [
+        '21m00Tcm4TlvDq8ikWAM',  # Rachel - Multilingual
+        'pNInz6obpgDQGcFmaJgB',  # Adam - Multilingual
+        'EXAVITQu4vr4xnSDxMaL',  # Bella - Multilingual
+        'VR6AewLTigWG4xSOukaG',  # Arnold - Multilingual
+    ],
+    'hi': [
+        '21m00Tcm4TlvDq8ikWAM',  # Rachel - Multilingual Female
+        'pNInz6obpgDQGcFmaJgB',  # Adam - Multilingual Male
+        'EXAVITQu4vr4xnSDxMaL',  # Bella - Multilingual Female
+        'VR6AewLTigWG4xSOukaG',  # Arnold - Multilingual Male
+    ],
+    'ja': [
+        '21m00Tcm4TlvDq8ikWAM',  # Rachel - Multilingual
+        'pNInz6obpgDQGcFmaJgB',  # Adam - Multilingual
+        'EXAVITQu4vr4xnSDxMaL',  # Bella - Multilingual
+        'VR6AewLTigWG4xSOukaG',  # Arnold - Multilingual
+    ],
+    'ko': [
+        '21m00Tcm4TlvDq8ikWAM',  # Rachel - Multilingual
+        'pNInz6obpgDQGcFmaJgB',  # Adam - Multilingual
+        'EXAVITQu4vr4xnSDxMaL',  # Bella - Multilingual
+        'VR6AewLTigWG4xSOukaG',  # Arnold - Multilingual
+    ],
+    'zh': [
+        '21m00Tcm4TlvDq8ikWAM',  # Rachel - Multilingual
+        'pNInz6obpgDQGcFmaJgB',  # Adam - Multilingual
+        'EXAVITQu4vr4xnSDxMaL',  # Bella - Multilingual
+        'VR6AewLTigWG4xSOukaG',  # Arnold - Multilingual
+    ],
+    'ar': [
+        '21m00Tcm4TlvDq8ikWAM',  # Rachel - Multilingual
+        'pNInz6obpgDQGcFmaJgB',  # Adam - Multilingual
+        'EXAVITQu4vr4xnSDxMaL',  # Bella - Multilingual
+        'VR6AewLTigWG4xSOukaG',  # Arnold - Multilingual
+    ],
+    'ru': [
+        '21m00Tcm4TlvDq8ikWAM',  # Rachel - Multilingual
+        'pNInz6obpgDQGcFmaJgB',  # Adam - Multilingual
+        'EXAVITQu4vr4xnSDxMaL',  # Bella - Multilingual
+        'VR6AewLTigWG4xSOukaG',  # Arnold - Multilingual
+    ],
+    'default': [
+        '21m00Tcm4TlvDq8ikWAM',  # Rachel
+        'pNInz6obpgDQGcFmaJgB',  # Adam
+        'EXAVITQu4vr4xnSDxMaL',  # Bella
+        'VR6AewLTigWG4xSOukaG',  # Arnold
+    ]
+}
+
 class SpeechSynthesizer:
     """Service for synthesizing speech using ElevenLabs"""
     
@@ -18,6 +101,9 @@ class SpeechSynthesizer:
         self.client = ElevenLabs(api_key=self.api_key)
         self.output_dir = output_dir
         Path(output_dir).mkdir(parents=True, exist_ok=True)
+        
+        # Speaker to voice mapping (populated during synthesis)
+        self.speaker_voice_map = {}
     
     def list_available_voices(self):
         """
@@ -114,30 +200,52 @@ class SpeechSynthesizer:
         except Exception as e:
             raise Exception(f"Failed to synthesize segment: {str(e)}")
     
-    def synthesize_segments(self, segments, voice_id='21m00Tcm4TlvDq8ikWAM', job_id='default'):
+    def synthesize_segments(self, segments, voice_id='21m00Tcm4TlvDq8ikWAM', job_id='default', 
+                           language_code='en', multi_speaker=True):
         """
-        Synthesize multiple segments
+        Synthesize multiple segments with optional multi-speaker support
         
         Args:
             segments: List of segments with translated text
-            voice_id: Voice to use
+            voice_id: Default voice to use (fallback for single speaker)
             job_id: Job identifier for file naming
+            language_code: Target language code
+            multi_speaker: Enable multi-speaker voice assignment
             
         Returns:
             list: Segments with audio_path added
         """
         synthesized_segments = []
         
+        # Detect if we have multi-speaker content
+        speakers = set(segment.get('speaker', 0) for segment in segments)
+        has_multiple_speakers = len(speakers) > 1
+        
+        if has_multiple_speakers and multi_speaker:
+            logger.info(f"[SYNTHESIZER] Multi-speaker mode: {len(speakers)} speakers detected")
+            # Assign voices to speakers
+            self._assign_voices_to_speakers(speakers, language_code)
+        else:
+            logger.info(f"[SYNTHESIZER] Single-speaker mode")
+            # Use default voice for all
+            self.speaker_voice_map = {0: voice_id}
+        
         for i, segment in enumerate(segments):
             try:
+                # Get voice for this segment's speaker
+                speaker_id = segment.get('speaker', 0)
+                segment_voice_id = self.speaker_voice_map.get(speaker_id, voice_id)
+                
                 output_path = os.path.join(
                     self.output_dir,
                     f"{job_id}_segment_{i:04d}.mp3"
                 )
                 
+                logger.info(f"[SYNTHESIZER] Segment {i}: Speaker {speaker_id} → Voice {segment_voice_id[:8]}...")
+                
                 synthesized_segment = self.synthesize_segment(
                     segment,
-                    voice_id,
+                    segment_voice_id,
                     output_path
                 )
                 
@@ -152,24 +260,33 @@ class SpeechSynthesizer:
         
         return synthesized_segments
     
+    def _assign_voices_to_speakers(self, speakers, language_code):
+        """
+        Assign different voices to different speakers
+        
+        Args:
+            speakers: Set of speaker IDs
+            language_code: Target language code
+        """
+        # Get voice pool for this language
+        voice_pool = VOICE_POOLS.get(language_code.lower(), VOICE_POOLS['default'])
+        
+        # Assign voices to speakers (cycle through pool if more speakers than voices)
+        sorted_speakers = sorted(speakers)
+        for idx, speaker_id in enumerate(sorted_speakers):
+            voice_idx = idx % len(voice_pool)
+            self.speaker_voice_map[speaker_id] = voice_pool[voice_idx]
+            logger.info(f"[SYNTHESIZER] Speaker {speaker_id} → Voice {voice_pool[voice_idx][:8]}...")
+    
     def get_voice_for_language(self, language_code):
         """
-        Get recommended voice ID for a language
+        Get recommended default voice ID for a language
         
         Args:
             language_code: Language code (e.g., 'es', 'fr')
             
         Returns:
-            str: Voice ID
+            str: Voice ID (first voice from pool)
         """
-        # Default multilingual voices
-        voice_map = {
-            'es': '21m00Tcm4TlvDq8ikWAM',  # Rachel - works well for Spanish
-            'fr': '21m00Tcm4TlvDq8ikWAM',  # Rachel - multilingual
-            'de': '21m00Tcm4TlvDq8ikWAM',  # Rachel - multilingual
-            'it': '21m00Tcm4TlvDq8ikWAM',  # Rachel - multilingual
-            'pt': '21m00Tcm4TlvDq8ikWAM',  # Rachel - multilingual
-            'default': '21m00Tcm4TlvDq8ikWAM'  # Rachel
-        }
-        
-        return voice_map.get(language_code.lower(), voice_map['default'])
+        voice_pool = VOICE_POOLS.get(language_code.lower(), VOICE_POOLS['default'])
+        return voice_pool[0]  # Return first voice as default

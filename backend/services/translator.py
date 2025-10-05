@@ -89,7 +89,8 @@ class Translator:
                     'original_text': segment['text'],
                     'translated_text': translated_text,
                     'start': segment['start'],
-                    'end': segment['end']
+                    'end': segment['end'],
+                    'speaker': segment.get('speaker', 0)  # Preserve speaker info
                 })
                 
             except Exception as e:
@@ -99,7 +100,8 @@ class Translator:
                     'original_text': segment['text'],
                     'translated_text': segment['text'],
                     'start': segment['start'],
-                    'end': segment['end']
+                    'end': segment['end'],
+                    'speaker': segment.get('speaker', 0)  # Preserve speaker info
                 })
         
         return translated_segments
@@ -142,7 +144,8 @@ class Translator:
                         'original_text': segment['text'],
                         'translated_text': translated_text.strip(),
                         'start': segment['start'],
-                        'end': segment['end']
+                        'end': segment['end'],
+                        'speaker': segment.get('speaker', 0)  # Preserve speaker info
                     })
                     
             except Exception as e:
@@ -162,7 +165,8 @@ class Translator:
                         'original_text': segment['text'],
                         'translated_text': translated_text,
                         'start': segment['start'],
-                        'end': segment['end']
+                        'end': segment['end'],
+                        'speaker': segment.get('speaker', 0)  # Preserve speaker info
                     })
         
         return translated_segments
