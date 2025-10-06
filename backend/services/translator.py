@@ -2,13 +2,14 @@ from openai import OpenAI
 import os
 import concurrent.futures
 import logging
+from .cache_manager import CacheManager
 
 logger = logging.getLogger(__name__)
 
 class Translator:
     """Service for translating text using OpenAI"""
     
-    def __init__(self, api_key=None):
+    def __init__(self, api_key=None, use_cache=True):
         self.api_key = api_key or os.getenv('OPENAI_API_KEY')
         if not self.api_key:
             raise ValueError("OpenAI API key is required")
@@ -18,6 +19,11 @@ class Translator:
         except TypeError:
             # Fallback for older SDK versions
             self.client = OpenAI(api_key=self.api_key)
+        
+        # Initialize cache
+        self.use_cache = use_cache
+        if self.use_cache:
+            self.cache = CacheManager()
     
     def translate_text(self, text, target_language, source_language='en'):
         """
@@ -31,6 +37,12 @@ class Translator:
         Returns:
             str: Translated text
         """
+        # Check cache first
+        if self.use_cache:
+            cached = self.cache.get_cached_translation(text, source_language, target_language)
+            if cached:
+                return cached
+        
         try:
             language_map = {
                 'en': 'English',
@@ -63,6 +75,11 @@ class Translator:
             )
             
             translated_text = response.choices[0].message.content.strip()
+            
+            # Cache the result
+            if self.use_cache:
+                self.cache.cache_translation(text, source_language, target_language, translated_text)
+            
             return translated_text
             
         except Exception as e:

@@ -1,21 +1,28 @@
 import os
 import logging
 from elevenlabs.client import ElevenLabs
+from .cache_manager import CacheManager
 
 logger = logging.getLogger(__name__)
 
 class VoiceCloner:
     """Clone voices using ElevenLabs Professional Voice Cloning"""
     
-    def __init__(self, api_key=None):
+    def __init__(self, api_key=None, use_cache=True, video_url=None):
         self.api_key = api_key or os.getenv('ELEVENLABS_API_KEY')
         if not self.api_key:
             raise ValueError("ElevenLabs API key is required")
         
         self.client = ElevenLabs(api_key=self.api_key)
         logger.info(f"[VOICE_CLONER] Initialized with API key: {self.api_key[:10]}...")
+        
+        # Initialize cache with video URL for job-agnostic caching
+        self.use_cache = use_cache
+        self.video_url = video_url
+        if self.use_cache:
+            self.cache = CacheManager()
     
-    def clone_voice(self, audio_path, voice_name, description=""):
+    def clone_voice(self, audio_path, voice_name, description="", speaker_id=None):
         """
         Clone a voice using ElevenLabs Professional Voice Cloning
         
@@ -23,10 +30,20 @@ class VoiceCloner:
             audio_path: Path to speaker audio sample (WAV file)
             voice_name: Name for the cloned voice
             description: Optional description of the voice
+            speaker_id: Optional speaker ID for job-agnostic caching
             
         Returns:
             str: voice_id of the cloned voice
         """
+        # Check cache first (with video_url for job-agnostic caching)
+        if self.use_cache:
+            cached_voice_id = self.cache.get_cached_voice(
+                audio_path, voice_name, self.video_url, speaker_id
+            )
+            if cached_voice_id:
+                logger.info(f"[VOICE_CLONER] Using cached voice ID: {cached_voice_id}")
+                return cached_voice_id
+        
         try:
             logger.info(f"[VOICE_CLONER] Cloning voice: {voice_name}")
             logger.info(f"[VOICE_CLONER] Audio sample: {audio_path}")
@@ -52,6 +69,12 @@ class VoiceCloner:
             logger.info(f"[VOICE_CLONER] ✅ Voice cloned successfully")
             logger.info(f"[VOICE_CLONER] Voice ID: {voice_id}")
             logger.info(f"[VOICE_CLONER] Voice Name: {voice_name}")
+            
+            # Cache the result (with video_url for job-agnostic caching)
+            if self.use_cache:
+                self.cache.cache_voice(
+                    audio_path, voice_name, voice_id, self.video_url, speaker_id
+                )
             
             return voice_id
             

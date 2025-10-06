@@ -30,14 +30,18 @@ class DubbingPipeline:
         self.start_time = start_time
         self.end_time = end_time
         
-        # Initialize services
+        # Initialize services (pass youtube_url and time ranges for job-agnostic caching)
         self.downloader = VideoDownloader(output_dir='temp')
-        self.transcriber = Transcriber()
-        self.translator = Translator()
+        self.transcriber = Transcriber(
+            video_url=youtube_url,
+            start_time=start_time,
+            end_time=end_time
+        )
+        self.translator = Translator()  # Already job-agnostic (text-based)
         self.synthesizer = SpeechSynthesizer(output_dir='temp')
         self.audio_separator = AudioSeparator(temp_dir='temp')
         self.speaker_extractor = SpeakerExtractor(temp_dir='temp')
-        self.voice_cloner = VoiceCloner()
+        self.voice_cloner = VoiceCloner(video_url=youtube_url)
         self.cloned_voices = {}
         self.audio_processor = AudioProcessor(temp_dir='temp')
         
@@ -501,10 +505,12 @@ class DubbingPipeline:
             logger.info(f"[VOICE_CLONING] Cloning voice for speaker {speaker_id}")
             
             try:
+                # Pass speaker_id for job-agnostic caching
                 voice_id = self.voice_cloner.clone_voice(
                     audio_path,
                     voice_name,
-                    description=f"Cloned voice from job {self.job_id}"
+                    description=f"Cloned voice from job {self.job_id}",
+                    speaker_id=speaker_id
                 )
                 
                 cloned_voices[speaker_id] = voice_id

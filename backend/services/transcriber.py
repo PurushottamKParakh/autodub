@@ -1,13 +1,14 @@
 from deepgram import DeepgramClient, PrerecordedOptions, FileSource
 import os
 import logging
+from .cache_manager import CacheManager
 
 logger = logging.getLogger(__name__)
 
 class Transcriber:
     """Service for transcribing audio using Deepgram"""
     
-    def __init__(self, api_key=None):
+    def __init__(self, api_key=None, use_cache=True, video_url=None, start_time=None, end_time=None):
         # CRITICAL: Clear proxy environment variables FIRST
         proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 
                       'ALL_PROXY', 'all_proxy', 'NO_PROXY', 'no_proxy']
@@ -29,6 +30,15 @@ class Transcriber:
         except Exception as e:
             logger.error(f"[TRANSCRIBER] ❌ Failed to initialize Deepgram client: {e}")
             raise
+        
+        # Initialize cache with video metadata for job-agnostic caching
+        self.use_cache = use_cache
+        self.video_url = video_url
+        self.start_time = start_time
+        self.end_time = end_time
+        if self.use_cache:
+            self.cache = CacheManager()
+            logger.info(f"[TRANSCRIBER] Cache enabled")
     
     def transcribe_audio(self, audio_path, language='en'):
         """
@@ -41,6 +51,15 @@ class Transcriber:
         Returns:
             dict: Transcription with timestamps
         """
+        # Check cache first (with video_url for job-agnostic caching)
+        if self.use_cache:
+            cached = self.cache.get_cached_transcription(
+                audio_path, language, self.video_url, self.start_time, self.end_time
+            )
+            if cached:
+                logger.info(f"[TRANSCRIBER] Using cached transcription")
+                return cached
+        
         try:
             logger.info(f"[TRANSCRIBER] Reading audio file: {audio_path}")
             
@@ -81,6 +100,13 @@ class Transcriber:
             
             # Parse the response
             transcription_data = self._parse_transcription(response.to_dict())
+            
+            # Cache the result (with video_url for job-agnostic caching)
+            if self.use_cache:
+                self.cache.cache_transcription(
+                    audio_path, language, transcription_data,
+                    self.video_url, self.start_time, self.end_time
+                )
             
             return transcription_data
             
@@ -144,12 +170,14 @@ class Transcriber:
                 speaker_count = 2  # Override to 2 speakers
                 logger.info(f"[TRANSCRIBER] Reassigned speakers - now treating as 2-speaker conversation")
             
-            return {
+            result = {
                 'full_text': full_text,
                 'segments': segments,
                 'words': words,
                 'speaker_count': speaker_count
             }
+            
+            return result
             
         except Exception as e:
             raise Exception(f"Failed to parse transcription: {str(e)}")
