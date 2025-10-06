@@ -134,11 +134,19 @@ class SpeechSynthesizer:
             logger.info(f"[SYNTHESIZER] Generating speech for text: {text[:50]}...")
             logger.info(f"[SYNTHESIZER] Using voice_id: {voice_id}, model: {model}")
             
-            # Use new SDK 1.0.0 API
+            # Use new SDK 1.0.0 API with optimized voice settings
+            from elevenlabs import VoiceSettings
+            
             audio_generator = self.client.generate(
                 text=text,
                 voice=voice_id,
-                model=model
+                model=model,
+                voice_settings=VoiceSettings(
+                    stability=0.5,           # Balanced stability for natural speech
+                    similarity_boost=0.75,   # High similarity to voice
+                    style=0.0,               # Neutral style for consistent timing
+                    use_speaker_boost=True   # Enhance speaker characteristics
+                )
             )
             
             # Convert generator to bytes
@@ -335,12 +343,20 @@ class SpeechSynthesizer:
                 logger.info(f"[SYNTHESIZER] Generating speech for text: {text[:50]}...")
                 logger.info(f"[SYNTHESIZER] Using voice_id: {voice_id}, model: {model}")
                 
-                # Generate speech
+                # Generate speech with optimized voice settings for better lip-sync
+                from elevenlabs import VoiceSettings
+                
                 audio_data = self.client.text_to_speech.convert(
                     voice_id=voice_id,
                     text=text,
                     model_id=model,
-                    output_format='mp3_44100_128'
+                    output_format='mp3_44100_128',
+                    voice_settings=VoiceSettings(
+                        stability=0.5,           # Balanced stability for natural speech
+                        similarity_boost=0.75,   # High similarity to cloned voice
+                        style=0.0,               # Neutral style for consistent timing
+                        use_speaker_boost=True   # Enhance speaker characteristics
+                    )
                 )
                 
                 # Save audio to file

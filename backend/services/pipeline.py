@@ -355,9 +355,15 @@ class DubbingPipeline:
             if original_duration > 0:
                 speed_factor = synth_duration / original_duration
                 
-                # If speed adjustment is needed (tolerance: 10%)
-                if abs(speed_factor - 1.0) > 0.1:
-                    print(f"Adjusting segment speed: {speed_factor:.2f}x")
+                # Log timing information
+                logger.info(f"[ALIGNMENT] Segment {segment['start']:.2f}s-{segment['end']:.2f}s:")
+                logger.info(f"[ALIGNMENT]   Original duration: {original_duration:.2f}s")
+                logger.info(f"[ALIGNMENT]   Synthesized duration: {synth_duration:.2f}s")
+                logger.info(f"[ALIGNMENT]   Speed factor: {speed_factor:.2f}x")
+                
+                # If speed adjustment is needed (tolerance: 1% for precise timing)
+                if abs(speed_factor - 1.0) > 0.01:
+                    logger.info(f"[ALIGNMENT] Adjusting segment speed to {speed_factor:.2f}x")
                     
                     # Adjust speed to fit original duration
                     adjusted_path = os.path.join(
@@ -372,8 +378,11 @@ class DubbingPipeline:
                             adjusted_path
                         )
                         segment['audio_path'] = adjusted_path
+                        logger.info(f"[ALIGNMENT] ✅ Speed adjusted successfully")
                     except Exception as e:
-                        print(f"Warning: Could not adjust speed: {e}")
+                        logger.warning(f"[ALIGNMENT] ⚠️ Could not adjust speed: {e}")
+                else:
+                    logger.info(f"[ALIGNMENT] ✅ No adjustment needed (within 1% tolerance)")
             
             aligned_segments.append(segment)
         

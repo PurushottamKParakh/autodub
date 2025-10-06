@@ -52,16 +52,21 @@ class Transcriber:
                 "buffer": buffer_data,
             }
             
-            # Configure options
+            # Configure options with enhanced parameters
             options = PrerecordedOptions(
-                model="nova-3",
-                language=language,
-                smart_format=True,
-                punctuate=True,
-                paragraphs=True,
-                utterances=True,
-                diarize=True,
-                filler_words=True,
+                model="nova-3",              # Latest and most accurate model
+                language=language,            # Source language
+                smart_format=True,            # Auto-format numbers, dates, etc.
+                punctuate=True,               # Add punctuation
+                paragraphs=True,              # Group into paragraphs
+                utterances=True,              # Detect natural speech breaks
+                diarize=True,                 # Speaker diarization # Latest diarization model
+                filler_words=True,            # Include filler words (um, uh)
+                numerals=True,                # Convert numbers to numerals
+                profanity_filter=False,       # Don't censor profanity
+                redact=False,                 # Don't redact PII
+                multichannel=False,           # Single audio channel
+                alternatives=1,               # Only need best transcription                 # Use nova tier for best quality
             )
             
             logger.info(f"[TRANSCRIBER] Sending transcription request...")
