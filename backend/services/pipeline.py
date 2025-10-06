@@ -1,6 +1,7 @@
 import os
 import time
 import logging
+import concurrent.futures
 from pathlib import Path
 from .downloader import VideoDownloader
 from .transcriber import Transcriber
@@ -167,82 +168,47 @@ class DubbingPipeline:
             logger.info(f"   Full Text Preview: {self.transcription.get('full_text', '')[:100]}...")
             logger.info(f"   ⏱️  Duration: {self.stage_timings['transcription']:.2f}s")
 
-            # Voice Cloning Stages (if enabled)
+            # PARALLEL EXECUTION: Translation + Voice Cloning
             if self.use_voice_cloning:
-                # Stage 3.5: Extract speaker audio samples
                 logger.info(f"\n{'='*80}")
-                logger.info(f"[STAGE 3.5/8] EXTRACTING SPEAKER AUDIO SAMPLES")
+                logger.info(f"[STAGE 3.5-4] PARALLEL: VOICE CLONING + TRANSLATION")
                 logger.info(f"{'='*80}")
                 
-                stage_start = time.time()
-                self.update_progress(35, 'processing', 'Extracting speaker audio samples...')
+                parallel_start = time.time()
+                self.update_progress(35, 'processing', 'Running voice cloning and translation in parallel...')
                 
-                speaker_samples = self.speaker_extractor.extract_speaker_samples(
-                    self.vocals_path,
-                    self.transcription['segments'],
-                    self.job_id,
-                    min_duration=10.0,
-                    max_duration=60.0
+                with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                    # Submit both tasks
+                    translation_future = executor.submit(
+                        self._run_translation,
+                        self.transcription['segments']
+                    )
+                    
+                    voice_cloning_future = executor.submit(
+                        self._run_voice_cloning,
+                        self.vocals_path,
+                        self.transcription['segments']
+                    )
+                    
+                    # Wait for both to complete
+                    self.translated_segments = translation_future.result()
+                    self.cloned_voices = voice_cloning_future.result()
+                
+                parallel_duration = time.time() - parallel_start
+                logger.info(f"✅ PARALLEL EXECUTION COMPLETE")
+                logger.info(f"   ⏱️  Total parallel time: {parallel_duration:.2f}s")
+                logger.info(f"   Translation: {self.stage_timings.get('translation', 0):.2f}s")
+                logger.info(f"   Voice Cloning: {self.stage_timings.get('voice_cloning_total', 0):.2f}s")
+                
+            else:
+                # No voice cloning - just run translation
+                logger.info(f"\n{'='*80}")
+                logger.info(f"[STAGE 4/6] TRANSLATING TEXT")
+                logger.info(f"{'='*80}")
+                
+                self.translated_segments = self._run_translation(
+                    self.transcription['segments']
                 )
-                
-                self.stage_timings['speaker_extraction'] = time.time() - stage_start
-                logger.info(f"✅ STAGE 3.5 COMPLETE: Extracted samples for {len(speaker_samples)} speaker(s)")
-                for speaker_id, path in speaker_samples.items():
-                    logger.info(f"   Speaker {speaker_id}: {path}")
-                logger.info(f"   ⏱️  Duration: {self.stage_timings['speaker_extraction']:.2f}s")
-                
-                # Stage 3.6: Clone voices
-                logger.info(f"\n{'='*80}")
-                logger.info(f"[STAGE 3.6/8] CLONING VOICES")
-                logger.info(f"{'='*80}")
-                
-                stage_start = time.time()
-                self.update_progress(38, 'processing', 'Cloning voices...')
-                
-                for speaker_id, audio_path in speaker_samples.items():
-                    voice_name = f"{self.job_id}_speaker_{speaker_id}"
-                    
-                    logger.info(f"[PIPELINE] Cloning voice for speaker {speaker_id}")
-                    
-                    try:
-                        voice_id = self.voice_cloner.clone_voice(
-                            audio_path,
-                            voice_name,
-                            description=f"Cloned voice from job {self.job_id}"
-                        )
-                        
-                        self.cloned_voices[speaker_id] = voice_id
-                        logger.info(f"[PIPELINE] Speaker {speaker_id} → Voice ID: {voice_id}")
-                    except Exception as e:
-                        logger.error(f"[PIPELINE] Failed to clone voice for speaker {speaker_id}: {str(e)}")
-                        logger.warning(f"[PIPELINE] Will use stock voice for speaker {speaker_id}")
-                
-                self.stage_timings['voice_cloning'] = time.time() - stage_start
-                logger.info(f"✅ STAGE 3.6 COMPLETE: Cloned {len(self.cloned_voices)} voice(s)")
-                logger.info(f"   ⏱️  Duration: {self.stage_timings['voice_cloning']:.2f}s")
-            
-            
-            # Step 3: Translate segments
-            logger.info(f"\n{'='*80}")
-            logger.info(f"[STAGE 4/6] TRANSLATING TEXT")
-            logger.info(f"{'='*80}")
-            logger.info(f"From: {self.source_language} → To: {self.target_language}")
-            logger.info(f"Segments to translate: {len(self.transcription['segments'])}")
-            
-            stage_start = time.time()
-            self.update_progress(45, 'processing', 'Translating text...')
-            self.translated_segments = self.translator.batch_translate_segments(
-                self.transcription['segments'],
-                self.target_language,
-                self.source_language
-            )
-            
-            self.stage_timings['translation'] = time.time() - stage_start
-            logger.info(f"✅ STAGE 4 COMPLETE: Translation successful")
-            logger.info(f"   Translated Segments: {len(self.translated_segments)}")
-            if self.translated_segments:
-                logger.info(f"   Sample Translation: '{self.translated_segments[0].get('original_text', '')[:50]}' → '{self.translated_segments[0].get('translated_text', '')[:50]}'")
-            logger.info(f"   ⏱️  Duration: {self.stage_timings['translation']:.2f}s")
             
             # Step 4: Synthesize speech
             logger.info(f"\n{'='*80}")
@@ -458,6 +424,103 @@ class DubbingPipeline:
         )
         
         return output_path
+    
+    def _run_translation(self, segments):
+        """
+        Run translation (can be called in parallel)
+        
+        Args:
+            segments: List of segments to translate
+            
+        Returns:
+            list: Translated segments
+        """
+        logger.info(f"[TRANSLATION] Starting translation of {len(segments)} segments")
+        logger.info(f"[TRANSLATION] From: {self.source_language} → To: {self.target_language}")
+        
+        stage_start = time.time()
+        self.update_progress(45, 'processing', 'Translating text...')
+        
+        translated_segments = self.translator.batch_translate_segments(
+            segments,
+            self.target_language,
+            self.source_language
+        )
+        
+        self.stage_timings['translation'] = time.time() - stage_start
+        logger.info(f"[TRANSLATION] ✅ Complete: {len(translated_segments)} segments")
+        if translated_segments:
+            logger.info(f"[TRANSLATION] Sample: '{translated_segments[0].get('original_text', '')[:50]}' → '{translated_segments[0].get('translated_text', '')[:50]}'")
+        logger.info(f"[TRANSLATION] ⏱️  Duration: {self.stage_timings['translation']:.2f}s")
+        
+        return translated_segments
+    
+    def _run_voice_cloning(self, vocals_path, segments):
+        """
+        Run speaker extraction + voice cloning (can be called in parallel)
+        
+        Args:
+            vocals_path: Path to vocals audio file
+            segments: List of transcription segments
+            
+        Returns:
+            dict: Cloned voices {speaker_id: voice_id}
+        """
+        cloning_start = time.time()
+        
+        # Stage 3.5: Extract speaker audio samples
+        logger.info(f"[VOICE_CLONING] Extracting speaker audio samples")
+        
+        extraction_start = time.time()
+        self.update_progress(35, 'processing', 'Extracting speaker audio samples...')
+        
+        speaker_samples = self.speaker_extractor.extract_speaker_samples(
+            vocals_path,
+            segments,
+            self.job_id,
+            min_duration=10.0,
+            max_duration=60.0
+        )
+        
+        self.stage_timings['speaker_extraction'] = time.time() - extraction_start
+        logger.info(f"[VOICE_CLONING] ✅ Extracted samples for {len(speaker_samples)} speaker(s)")
+        for speaker_id, path in speaker_samples.items():
+            logger.info(f"[VOICE_CLONING]    Speaker {speaker_id}: {path}")
+        logger.info(f"[VOICE_CLONING] ⏱️  Extraction: {self.stage_timings['speaker_extraction']:.2f}s")
+        
+        # Stage 3.6: Clone voices
+        logger.info(f"[VOICE_CLONING] Cloning voices")
+        
+        cloning_stage_start = time.time()
+        self.update_progress(38, 'processing', 'Cloning voices...')
+        
+        cloned_voices = {}
+        for speaker_id, audio_path in speaker_samples.items():
+            voice_name = f"{self.job_id}_speaker_{speaker_id}"
+            
+            logger.info(f"[VOICE_CLONING] Cloning voice for speaker {speaker_id}")
+            
+            try:
+                voice_id = self.voice_cloner.clone_voice(
+                    audio_path,
+                    voice_name,
+                    description=f"Cloned voice from job {self.job_id}"
+                )
+                
+                cloned_voices[speaker_id] = voice_id
+                logger.info(f"[VOICE_CLONING] Speaker {speaker_id} → Voice ID: {voice_id}")
+            except Exception as e:
+                logger.error(f"[VOICE_CLONING] Failed to clone voice for speaker {speaker_id}: {str(e)}")
+                logger.warning(f"[VOICE_CLONING] Will use stock voice for speaker {speaker_id}")
+        
+        self.stage_timings['voice_cloning'] = time.time() - cloning_stage_start
+        self.stage_timings['voice_cloning_total'] = time.time() - cloning_start
+        
+        logger.info(f"[VOICE_CLONING] ✅ Cloned {len(cloned_voices)} voice(s)")
+        logger.info(f"[VOICE_CLONING] ⏱️  Cloning: {self.stage_timings['voice_cloning']:.2f}s")
+        logger.info(f"[VOICE_CLONING] ⏱️  Total: {self.stage_timings['voice_cloning_total']:.2f}s")
+        
+        return cloned_voices
     
     def cleanup(self):
         """Clean up temporary files"""
