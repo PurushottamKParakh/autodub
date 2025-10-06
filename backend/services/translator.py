@@ -1,5 +1,9 @@
 from openai import OpenAI
 import os
+import concurrent.futures
+import logging
+
+logger = logging.getLogger(__name__)
 
 class Translator:
     """Service for translating text using OpenAI"""
@@ -107,9 +111,37 @@ class Translator:
         
         return translated_segments
     
-    def batch_translate_segments(self, segments, target_language, source_language='en', batch_size=5):
+    def batch_translate_segments(self, segments, target_language, source_language='en', 
+                                 batch_size=5, parallel=True, max_workers=3):
         """
         Translate segments in batches for efficiency
+        
+        Args:
+            segments: List of segments
+            target_language: Target language
+            source_language: Source language
+            batch_size: Number of segments to translate at once
+            parallel: Enable parallel translation (default: True)
+            max_workers: Maximum parallel workers (default: 3)
+            
+        Returns:
+            list: Translated segments
+        """
+        # Route to parallel or sequential implementation
+        if parallel:
+            logger.info(f"[TRANSLATOR] Using parallel translation with {max_workers} workers")
+            return self._batch_translate_parallel(
+                segments, target_language, source_language, batch_size, max_workers
+            )
+        else:
+            logger.info(f"[TRANSLATOR] Using sequential translation")
+            return self._batch_translate_sequential(
+                segments, target_language, source_language, batch_size
+            )
+    
+    def _batch_translate_sequential(self, segments, target_language, source_language='en', batch_size=5):
+        """
+        Sequential batch translation (original implementation)
         
         Args:
             segments: List of segments
@@ -170,4 +202,115 @@ class Translator:
                         'speaker': segment.get('speaker', 0)  # Preserve speaker info
                     })
         
+        return translated_segments
+    
+    def _batch_translate_parallel(self, segments, target_language, source_language, 
+                                  batch_size, max_workers):
+        """
+        Parallel batch translation using ThreadPoolExecutor
+        
+        Args:
+            segments: List of segments to translate
+            target_language: Target language code
+            source_language: Source language code
+            batch_size: Number of segments per batch
+            max_workers: Maximum parallel workers
+            
+        Returns:
+            list: Translated segments in original order
+        """
+        def translate_batch(batch_index, batch):
+            """Translate a single batch of segments"""
+            try:
+                # Combine texts with markers
+                combined_text = "\n---\n".join([seg['text'] for seg in batch])
+                
+                logger.info(f"[TRANSLATOR] Translating batch {batch_index} ({len(batch)} segments)")
+                
+                translated_combined = self.translate_text(
+                    combined_text,
+                    target_language,
+                    source_language
+                )
+                
+                # Split back into segments
+                translated_texts = translated_combined.split("\n---\n")
+                
+                batch_results = []
+                for j, segment in enumerate(batch):
+                    translated_text = translated_texts[j] if j < len(translated_texts) else segment['text']
+                    
+                    batch_results.append({
+                        'original_text': segment['text'],
+                        'translated_text': translated_text.strip(),
+                        'start': segment['start'],
+                        'end': segment['end'],
+                        'speaker': segment.get('speaker', 0)
+                    })
+                
+                return (batch_index, batch_results, None)
+                
+            except Exception as e:
+                error_msg = str(e)
+                logger.error(f"[TRANSLATOR] Batch {batch_index} failed: {error_msg}")
+                
+                # Fallback: translate individually
+                batch_results = []
+                for segment in batch:
+                    try:
+                        translated_text = self.translate_text(
+                            segment['text'],
+                            target_language,
+                            source_language
+                        )
+                    except:
+                        translated_text = segment['text']
+                    
+                    batch_results.append({
+                        'original_text': segment['text'],
+                        'translated_text': translated_text,
+                        'start': segment['start'],
+                        'end': segment['end'],
+                        'speaker': segment.get('speaker', 0)
+                    })
+                
+                return (batch_index, batch_results, error_msg)
+        
+        # Create batches
+        batches = []
+        for i in range(0, len(segments), batch_size):
+            batches.append(segments[i:i + batch_size])
+        
+        logger.info(f"[TRANSLATOR] Processing {len(segments)} segments in {len(batches)} batches")
+        
+        # Store results with original batch order
+        results = [None] * len(batches)
+        
+        # Use ThreadPoolExecutor for I/O-bound API calls
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all batch translation tasks
+            future_to_batch = {
+                executor.submit(translate_batch, i, batch): i 
+                for i, batch in enumerate(batches)
+            }
+            
+            # Collect results as they complete
+            completed = 0
+            for future in concurrent.futures.as_completed(future_to_batch):
+                batch_idx, batch_results, error = future.result()
+                results[batch_idx] = batch_results
+                completed += 1
+                
+                if error:
+                    logger.warning(f"[TRANSLATOR] Batch {batch_idx} had errors (used fallback)")
+                
+                # Log progress
+                logger.info(f"[TRANSLATOR] Progress: {completed}/{len(batches)} batches completed")
+        
+        # Flatten results back into single list
+        translated_segments = []
+        for batch_results in results:
+            translated_segments.extend(batch_results)
+        
+        logger.info(f"[TRANSLATOR] ✅ Translated {len(translated_segments)} segments")
         return translated_segments

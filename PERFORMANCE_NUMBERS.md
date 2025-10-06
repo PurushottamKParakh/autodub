@@ -44,3 +44,29 @@ After Parallel synthesis Implementation optimization for youtube url: https://ww
 
 The change in segment count is at deepgram level, which varies slightly accross runs.
 total improvement: (163.64s - 118.65s)/163.64s * 100 = 27.52%
+
+
+After Parallel translation optimization:
+
+2025-10-06 16:47:27 [INFO] services.pipeline: Total Segments: 29
+2025-10-06 16:47:27 [INFO] services.pipeline: 
+2025-10-06 16:47:27 [INFO] services.pipeline: ⏱️  PERFORMANCE SUMMARY:
+2025-10-06 16:47:27 [INFO] services.pipeline: ────────────────────────────────────────────────────────────────────────────────
+2025-10-06 16:47:27 [INFO] services.pipeline:    Download:              11.09s
+2025-10-06 16:47:27 [INFO] services.pipeline:    Audio Extraction:       0.09s
+2025-10-06 16:47:27 [INFO] services.pipeline:    Audio Separation:      15.02s
+2025-10-06 16:47:27 [INFO] services.pipeline:    Transcription:          6.83s
+2025-10-06 16:47:27 [INFO] services.pipeline:    Speaker Extraction:     1.79s
+2025-10-06 16:47:27 [INFO] services.pipeline:    Voice Cloning:          8.06s
+2025-10-06 16:47:27 [INFO] services.pipeline:    Translation:           31.63s
+2025-10-06 16:47:27 [INFO] services.pipeline:    Synthesis:             11.57s
+2025-10-06 16:47:27 [INFO] services.pipeline:    Alignment:              2.72s
+2025-10-06 16:47:27 [INFO] services.pipeline:    Mixing:                 0.57s
+2025-10-06 16:47:27 [INFO] services.pipeline:    Video Merge:            0.46s
+2025-10-06 16:47:27 [INFO] services.pipeline: ────────────────────────────────────────────────────────────────────────────────
+2025-10-06 16:47:27 [INFO] services.pipeline:    🏁 TOTAL TIME:         89.84s (1.50 minutes)
+2025-10-06 16:47:27 [INFO] services.pipeline: ================================================================================
+
+Total time :  89.84s
+Total improvement by this optimization: (118.65s - 89.84s)/118.65s * 100 = 25.12%
+
