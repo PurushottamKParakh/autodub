@@ -37,7 +37,11 @@ def check_dependencies():
         'deepgram',
         'elevenlabs',
         'dotenv',
-        'requests'
+        'requests',
+        'torch',
+        'torchaudio',
+        'demucs',
+        'soundfile'
     ]
     
     missing = []
@@ -51,6 +55,24 @@ def check_dependencies():
             missing.append(package)
     
     return len(missing) == 0
+
+def check_pytorch_mps():
+    """Check if PyTorch MPS (Apple Silicon GPU) is available"""
+    print("\nChecking PyTorch MPS support...")
+    
+    try:
+        import torch
+        if torch.backends.mps.is_available():
+            print("✅ PyTorch MPS (Apple M-series GPU) available")
+            print(f"   PyTorch version: {torch.__version__}")
+            return True
+        else:
+            print("⚠️  PyTorch MPS not available (will use CPU)")
+            print(f"   PyTorch version: {torch.__version__}")
+            return True  # Not a failure, just slower
+    except Exception as e:
+        print(f"❌ Error checking PyTorch: {e}")
+        return False
 
 def check_ffmpeg():
     """Check if ffmpeg is installed"""
@@ -116,7 +138,7 @@ def check_directories():
     """Check if required directories exist"""
     print("\nChecking directories...")
     
-    required_dirs = ['uploads', 'outputs', 'temp', 'services']
+    required_dirs = ['uploads', 'outputs', 'temp', 'cache', 'services']
     
     all_exist = True
     
@@ -142,6 +164,10 @@ def check_services():
         'services/translator.py',
         'services/synthesizer.py',
         'services/audio_processor.py',
+        'services/audio_separator.py',
+        'services/speaker_extractor.py',
+        'services/voice_cloner.py',
+        'services/cache_manager.py',
         'services/pipeline.py'
     ]
     
@@ -161,49 +187,31 @@ def test_imports():
     """Test if services can be imported"""
     print("\nTesting service imports...")
     
-    try:
-        from services.downloader import VideoDownloader
-        print("✅ VideoDownloader")
-    except Exception as e:
-        print(f"❌ VideoDownloader: {e}")
-        return False
+    services_to_test = [
+        ('services.downloader', 'VideoDownloader'),
+        ('services.transcriber', 'Transcriber'),
+        ('services.translator', 'Translator'),
+        ('services.synthesizer', 'SpeechSynthesizer'),
+        ('services.audio_processor', 'AudioProcessor'),
+        ('services.audio_separator', 'AudioSeparator'),
+        ('services.speaker_extractor', 'SpeakerExtractor'),
+        ('services.voice_cloner', 'VoiceCloner'),
+        ('services.cache_manager', 'CacheManager'),
+        ('services.pipeline', 'DubbingPipeline')
+    ]
     
-    try:
-        from services.transcriber import Transcriber
-        print("✅ Transcriber")
-    except Exception as e:
-        print(f"❌ Transcriber: {e}")
-        return False
+    all_passed = True
     
-    try:
-        from services.translator import Translator
-        print("✅ Translator")
-    except Exception as e:
-        print(f"❌ Translator: {e}")
-        return False
+    for module_name, class_name in services_to_test:
+        try:
+            module = __import__(module_name, fromlist=[class_name])
+            getattr(module, class_name)
+            print(f"✅ {class_name}")
+        except Exception as e:
+            print(f"❌ {class_name}: {e}")
+            all_passed = False
     
-    try:
-        from services.synthesizer import SpeechSynthesizer
-        print("✅ SpeechSynthesizer")
-    except Exception as e:
-        print(f"❌ SpeechSynthesizer: {e}")
-        return False
-    
-    try:
-        from services.audio_processor import AudioProcessor
-        print("✅ AudioProcessor")
-    except Exception as e:
-        print(f"❌ AudioProcessor: {e}")
-        return False
-    
-    try:
-        from services.pipeline import DubbingPipeline
-        print("✅ DubbingPipeline")
-    except Exception as e:
-        print(f"❌ DubbingPipeline: {e}")
-        return False
-    
-    return True
+    return all_passed
 
 def main():
     """Run all checks"""
@@ -212,6 +220,7 @@ def main():
     results = {
         'Python Version': check_python_version(),
         'Dependencies': check_dependencies(),
+        'PyTorch MPS': check_pytorch_mps(),
         'ffmpeg': check_ffmpeg(),
         'Environment': check_env_file(),
         'Directories': check_directories(),
