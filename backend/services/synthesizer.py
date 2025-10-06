@@ -2,6 +2,8 @@ from elevenlabs.client import ElevenLabs
 import os
 import logging
 from pathlib import Path
+import concurrent.futures
+import time
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -209,7 +211,7 @@ class SpeechSynthesizer:
             raise Exception(f"Failed to synthesize segment: {str(e)}")
     
     def synthesize_segments(self, segments, voice_id='21m00Tcm4TlvDq8ikWAM', job_id='default', 
-                           language_code='en', multi_speaker=True):
+                           language_code='en', multi_speaker=True, parallel=True, max_workers=5):
         """
         Synthesize multiple segments with optional multi-speaker support
         
@@ -219,12 +221,12 @@ class SpeechSynthesizer:
             job_id: Job identifier for file naming
             language_code: Target language code
             multi_speaker: Enable multi-speaker voice assignment
+            parallel: Enable parallel synthesis (default: True)
+            max_workers: Maximum parallel workers (default: 5)
             
         Returns:
             list: Segments with audio_path added
         """
-        synthesized_segments = []
-        
         # Detect if we have multi-speaker content
         speakers = set(segment.get('speaker', 0) for segment in segments)
         has_multiple_speakers = len(speakers) > 1
@@ -237,6 +239,24 @@ class SpeechSynthesizer:
             logger.info(f"[SYNTHESIZER] Single-speaker mode")
             # Use default voice for all
             self.speaker_voice_map = {0: voice_id}
+        
+        # Use parallel synthesis if enabled
+        if parallel:
+            logger.info(f"[SYNTHESIZER] Using parallel synthesis with {max_workers} workers")
+            return self._synthesize_segments_parallel(
+                segments, voice_id, job_id, max_workers
+            )
+        else:
+            logger.info(f"[SYNTHESIZER] Using sequential synthesis")
+            return self._synthesize_segments_sequential(
+                segments, voice_id, job_id
+            )
+    
+    def _synthesize_segments_sequential(self, segments, voice_id, job_id):
+        """
+        Sequential synthesis (original implementation)
+        """
+        synthesized_segments = []
         
         for i, segment in enumerate(segments):
             try:
@@ -267,6 +287,72 @@ class SpeechSynthesizer:
                 synthesized_segments.append(segment)
         
         return synthesized_segments
+    
+    def _synthesize_segments_parallel(self, segments, voice_id, job_id, max_workers):
+        """
+        Parallel synthesis using ThreadPoolExecutor
+        
+        Args:
+            segments: List of segments to synthesize
+            voice_id: Default voice ID
+            job_id: Job identifier
+            max_workers: Maximum number of parallel workers
+            
+        Returns:
+            list: Synthesized segments in original order
+        """
+        def synthesize_single(i, segment):
+            """Synthesize a single segment"""
+            try:
+                speaker_id = segment.get('speaker', 0)
+                segment_voice_id = self.speaker_voice_map.get(speaker_id, voice_id)
+                
+                output_path = os.path.join(
+                    self.output_dir,
+                    f"{job_id}_segment_{i:04d}.mp3"
+                )
+                
+                logger.info(f"[SYNTHESIZER] Segment {i}: Speaker {speaker_id} → Voice {segment_voice_id[:8]}...")
+                
+                synthesized_segment = self.synthesize_segment(
+                    segment,
+                    segment_voice_id,
+                    output_path
+                )
+                
+                return (i, synthesized_segment, None)
+                
+            except Exception as e:
+                error_msg = str(e)
+                logger.error(f"[SYNTHESIZER] Failed to synthesize segment {i}: {error_msg}")
+                return (i, segment, error_msg)
+        
+        # Create a list to store results with their original indices
+        results = [None] * len(segments)
+        
+        # Use ThreadPoolExecutor for I/O-bound API calls
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks
+            future_to_index = {
+                executor.submit(synthesize_single, i, segment): i 
+                for i, segment in enumerate(segments)
+            }
+            
+            # Collect results as they complete
+            completed = 0
+            for future in concurrent.futures.as_completed(future_to_index):
+                idx, result, error = future.result()
+                results[idx] = result
+                completed += 1
+                
+                if error:
+                    logger.warning(f"[SYNTHESIZER] Segment {idx} failed: {error}")
+                
+                # Log progress
+                if completed % 5 == 0 or completed == len(segments):
+                    logger.info(f"[SYNTHESIZER] Progress: {completed}/{len(segments)} segments completed")
+        
+        return results
     
     def _assign_voices_to_speakers(self, speakers, language_code):
         """
@@ -300,7 +386,8 @@ class SpeechSynthesizer:
         return voice_pool[0]  # Return first voice as default
     
     def synthesize_segments_with_cloned_voices(self, segments, cloned_voices, 
-                                              language_code='en', model='eleven_multilingual_v2'):
+                                              language_code='en', model='eleven_multilingual_v2',
+                                              parallel=True, max_workers=5):
         """
         Synthesize segments using cloned voices
         
@@ -309,6 +396,8 @@ class SpeechSynthesizer:
             cloned_voices: dict {speaker_id: voice_id} mapping
             language_code: Target language code
             model: ElevenLabs model to use
+            parallel: Enable parallel synthesis (default: True)
+            max_workers: Maximum parallel workers (default: 5)
             
         Returns:
             list: Segments with audio_path added
@@ -318,16 +407,91 @@ class SpeechSynthesizer:
             logger.info(f"[SYNTHESIZER] Cloned voices: {cloned_voices}")
             logger.info(f"[SYNTHESIZER] Segments to synthesize: {len(segments)}")
             
-            synthesized_segments = []
+            if parallel:
+                logger.info(f"[SYNTHESIZER] Using parallel synthesis with {max_workers} workers")
+                return self._synthesize_cloned_parallel(segments, cloned_voices, model, max_workers)
+            else:
+                logger.info(f"[SYNTHESIZER] Using sequential synthesis")
+                return self._synthesize_cloned_sequential(segments, cloned_voices, model)
             
-            for i, segment in enumerate(segments):
+        except Exception as e:
+            logger.error(f"[SYNTHESIZER] ❌ Synthesis failed: {str(e)}")
+            raise
+    
+    def _synthesize_cloned_sequential(self, segments, cloned_voices, model):
+        """
+        Sequential synthesis with cloned voices (original implementation)
+        """
+        from elevenlabs import VoiceSettings
+        
+        synthesized_segments = []
+        
+        for i, segment in enumerate(segments):
+            speaker = segment.get('speaker', 0)
+            text = segment.get('translated_text') or segment.get('text', '')
+            
+            if not text:
+                logger.warning(f"[SYNTHESIZER] Segment {i} has no text, skipping")
+                synthesized_segments.append(segment)
+                continue
+            
+            # Get cloned voice for this speaker
+            voice_id = cloned_voices.get(speaker)
+            
+            if not voice_id:
+                logger.warning(
+                    f"[SYNTHESIZER] No cloned voice for speaker {speaker}, "
+                    f"using default voice"
+                )
+                voice_id = self.get_voice_for_language('en')
+            
+            logger.info(f"[SYNTHESIZER] Segment {i}: Speaker {speaker} → Voice {voice_id[:8]}...")
+            
+            # Generate speech
+            audio_data = self.client.text_to_speech.convert(
+                voice_id=voice_id,
+                text=text,
+                model_id=model,
+                output_format='mp3_44100_128',
+                voice_settings=VoiceSettings(
+                    stability=0.5,
+                    similarity_boost=0.75,
+                    style=0.0,
+                    use_speaker_boost=True
+                )
+            )
+            
+            # Save audio to file
+            audio_path = os.path.join(
+                self.output_dir,
+                f'segment_{i}_{speaker}.mp3'
+            )
+            
+            with open(audio_path, 'wb') as f:
+                for chunk in audio_data:
+                    f.write(chunk)
+            
+            segment['audio_path'] = audio_path
+            synthesized_segments.append(segment)
+        
+        logger.info(f"[SYNTHESIZER] ✅ Synthesized {len(synthesized_segments)} segments with cloned voices")
+        return synthesized_segments
+    
+    def _synthesize_cloned_parallel(self, segments, cloned_voices, model, max_workers):
+        """
+        Parallel synthesis with cloned voices
+        """
+        from elevenlabs import VoiceSettings
+        
+        def synthesize_single_cloned(i, segment):
+            """Synthesize a single segment with cloned voice"""
+            try:
                 speaker = segment.get('speaker', 0)
                 text = segment.get('translated_text') or segment.get('text', '')
                 
                 if not text:
                     logger.warning(f"[SYNTHESIZER] Segment {i} has no text, skipping")
-                    synthesized_segments.append(segment)
-                    continue
+                    return (i, segment, None)
                 
                 # Get cloned voice for this speaker
                 voice_id = cloned_voices.get(speaker)
@@ -337,25 +501,21 @@ class SpeechSynthesizer:
                         f"[SYNTHESIZER] No cloned voice for speaker {speaker}, "
                         f"using default voice"
                     )
-                    voice_id = self.default_voice_id
+                    voice_id = self.get_voice_for_language('en')
                 
                 logger.info(f"[SYNTHESIZER] Segment {i}: Speaker {speaker} → Voice {voice_id[:8]}...")
-                logger.info(f"[SYNTHESIZER] Generating speech for text: {text[:50]}...")
-                logger.info(f"[SYNTHESIZER] Using voice_id: {voice_id}, model: {model}")
                 
-                # Generate speech with optimized voice settings for better lip-sync
-                from elevenlabs import VoiceSettings
-                
+                # Generate speech
                 audio_data = self.client.text_to_speech.convert(
                     voice_id=voice_id,
                     text=text,
                     model_id=model,
                     output_format='mp3_44100_128',
                     voice_settings=VoiceSettings(
-                        stability=0.5,           # Balanced stability for natural speech
-                        similarity_boost=0.75,   # High similarity to cloned voice
-                        style=0.0,               # Neutral style for consistent timing
-                        use_speaker_boost=True   # Enhance speaker characteristics
+                        stability=0.5,
+                        similarity_boost=0.75,
+                        style=0.0,
+                        use_speaker_boost=True
                     )
                 )
                 
@@ -365,21 +525,42 @@ class SpeechSynthesizer:
                     f'segment_{i}_{speaker}.mp3'
                 )
                 
-                # Write audio data
                 with open(audio_path, 'wb') as f:
                     for chunk in audio_data:
                         f.write(chunk)
                 
-                audio_size = os.path.getsize(audio_path)
-                logger.info(f"[SYNTHESIZER] Successfully generated {audio_size} bytes of audio")
-                
-                # Add audio path to segment
                 segment['audio_path'] = audio_path
-                synthesized_segments.append(segment)
+                return (i, segment, None)
+                
+            except Exception as e:
+                error_msg = str(e)
+                logger.error(f"[SYNTHESIZER] Failed to synthesize segment {i}: {error_msg}")
+                return (i, segment, error_msg)
+        
+        # Create a list to store results with their original indices
+        results = [None] * len(segments)
+        
+        # Use ThreadPoolExecutor for I/O-bound API calls
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks
+            future_to_index = {
+                executor.submit(synthesize_single_cloned, i, segment): i 
+                for i, segment in enumerate(segments)
+            }
             
-            logger.info(f"[SYNTHESIZER] ✅ Synthesized {len(synthesized_segments)} segments with cloned voices")
-            return synthesized_segments
-            
-        except Exception as e:
-            logger.error(f"[SYNTHESIZER] ❌ Synthesis failed: {str(e)}")
-            raise
+            # Collect results as they complete
+            completed = 0
+            for future in concurrent.futures.as_completed(future_to_index):
+                idx, result, error = future.result()
+                results[idx] = result
+                completed += 1
+                
+                if error:
+                    logger.warning(f"[SYNTHESIZER] Segment {idx} failed: {error}")
+                
+                # Log progress
+                if completed % 5 == 0 or completed == len(segments):
+                    logger.info(f"[SYNTHESIZER] Progress: {completed}/{len(segments)} segments completed")
+        
+        logger.info(f"[SYNTHESIZER] ✅ Synthesized {len(results)} segments with cloned voices")
+        return results
